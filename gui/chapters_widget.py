@@ -214,7 +214,9 @@ class ChaptersInspectorWidget(QWidget):
         app_name = self.current_record.get("app_name", "macOS")
         category = self.current_record.get("category", "General")
 
-        suggested_title = SmartNamer.generate_title(all_text, app_name, category, file_path)
+        suggested_title = SmartNamer.generate_title(
+            all_text, app_name, category, file_path, events=self.current_events
+        )
 
         new_title, ok = QInputDialog.getText(
             self, "Smart Rename File",

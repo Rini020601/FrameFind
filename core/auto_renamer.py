@@ -54,10 +54,9 @@ def get_macos_screencapture_location() -> str:
 
 def send_macos_notification(title: str, message: str):
     """Display a native macOS banner notification upon successful auto-renaming."""
-    # Clean quotes for AppleScript
     safe_title = title.replace('"', '\\"')
     safe_msg = message.replace('"', '\\"')
-    applescript = f'display notification "{safe_msg}" with title "{safe_title}"'
+    applescript = f'display notification "{safe_msg}" with title "{safe_title}" sound name "Glass"'
     try:
         subprocess.run(["osascript", "-e", applescript], capture_output=True, check=False)
     except Exception:
@@ -104,24 +103,24 @@ class SilentCaptureHandler(FileSystemEventHandler):
     def _wait_and_rename(self, file_path: str):
         logger.info(f"Detected new macOS capture: {os.path.basename(file_path)}")
 
-        # 1. Debounce and wait for macOS to finish saving the file (file size stable)
+        # 1. Debounce and wait for macOS to finish saving the file (poll every 0.35s)
         last_size = -1
-        stable_seconds = 0
-        max_wait_seconds = 45  # large screen recordings can take time to flush
+        stable_count = 0
+        max_checks = 120  # up to ~40 seconds for huge recordings
 
-        for _ in range(max_wait_seconds):
-            time.sleep(1.0)
+        for _ in range(max_checks):
+            time.sleep(0.35)
             if not os.path.exists(file_path):
                 return
             try:
                 curr_size = os.path.getsize(file_path)
                 if curr_size > 0 and curr_size == last_size:
-                    stable_seconds += 1
-                    # Require 2 consecutive seconds of unchanged size to be sure write completed
-                    if stable_seconds >= 2:
+                    stable_count += 1
+                    # 3 consecutive stable checks (~1s) confirms file write is completed
+                    if stable_count >= 3:
                         break
                 else:
-                    stable_seconds = 0
+                    stable_count = 0
                 last_size = curr_size
             except OSError:
                 pass
@@ -145,10 +144,21 @@ class SilentCaptureHandler(FileSystemEventHandler):
         if rec and rec["file_name"] != old_filename:
             new_filename = rec["file_name"]
             new_path = rec["file_path"]
-            logger.info(f"🎉 Successfully auto-renamed in Finder:\n   '{old_filename}'\n   --> '{new_filename}'")
+
+            # Force macOS Spotlight & Finder to immediately refresh Recents view
+            try:
+                subprocess.run(["mdimport", new_path], capture_output=True, check=False)
+                subprocess.run(
+                    ["osascript", "-e", f'tell application "Finder" to update (POSIX file "{new_path}")'],
+                    capture_output=True, check=False
+                )
+            except Exception:
+                pass
+
+            logger.info(f"🎉 Successfully auto-renamed in Finder:\n   '{old_filename}'\n   --> '{new_filename}' in {os.path.dirname(new_path)}")
             send_macos_notification(
                 "⚡ Screenrecord Auto-Renamed",
-                f"Renamed to: {new_filename}"
+                f"Saved as: {new_filename}"
             )
             if self.on_renamed:
                 self.on_renamed(file_path, new_path)

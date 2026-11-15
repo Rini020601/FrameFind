@@ -95,6 +95,7 @@ class IndexerPipeline:
         total_frames = meta["frame_count"]
         fps = meta["fps"] or 30.0
         all_detected_text = []
+        collected_events = []
         event_count = 0
 
         for frame_info in self.video_processor.extract_keyframes(file_path, record_id):
@@ -108,6 +109,11 @@ class IndexerPipeline:
             # Only store event if text or scene change was detected
             if ocr_text.strip():
                 all_detected_text.append(ocr_text)
+                collected_events.append({
+                    "timestamp_sec": timestamp_sec,
+                    "ocr_text": ocr_text,
+                    "bounding_boxes": boxes
+                })
                 self.db.insert_event({
                     "record_id": record_id,
                     "timestamp_sec": timestamp_sec,
@@ -144,7 +150,9 @@ class IndexerPipeline:
             filename.startswith("Screen Shot")
         )
         if self.auto_rename and is_generic_name:
-            smart_title = SmartNamer.generate_title(all_detected_text, inferred_app, category, file_path)
+            smart_title = SmartNamer.generate_title(
+                all_detected_text, inferred_app, category, file_path, events=collected_events
+            )
             try:
                 new_path = SmartNamer.rename_recording_file(file_path, smart_title)
                 if new_path != file_path:
@@ -218,7 +226,10 @@ class IndexerPipeline:
             filename.startswith("Screen Shot")
         )
         if self.auto_rename and is_generic_name:
-            smart_title = SmartNamer.generate_title([ocr_text], inferred_app, category, file_path)
+            smart_title = SmartNamer.generate_title(
+                [ocr_text], inferred_app, category, file_path,
+                events=[{"ocr_text": ocr_text, "bounding_boxes": boxes}]
+            )
             try:
                 new_path = SmartNamer.rename_recording_file(file_path, smart_title)
                 if new_path != file_path:
