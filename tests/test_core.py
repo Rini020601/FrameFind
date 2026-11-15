@@ -17,6 +17,7 @@ from core.redactor import PrivacyRedactor
 from core.video import VideoProcessor
 from core.indexer import IndexerPipeline
 from core.ocr import get_ocr_engine
+from core.namer import SmartNamer
 
 
 class TestScreenrecordManager(unittest.TestCase):
@@ -161,6 +162,31 @@ class TestScreenrecordManager(unittest.TestCase):
         hits = self.db.search("ErrorCode")
         self.assertGreater(len(hits), 0)
         self.assertEqual(hits[0]["record_id"], rec_id)
+
+    def test_smart_namer(self):
+        """Test auto-naming based on OCR text content."""
+        error_ocr = [
+            "VS Code - main.py",
+            "Traceback (most recent call last):",
+            "TypeError: cannot unpack non-iterable NoneType object"
+        ]
+        title = SmartNamer.generate_title(error_ocr, app_name="VS Code", category="Code & Terminal")
+        self.assertIn("VS Code", title)
+        self.assertIn("TypeError", title)
+
+        slide_ocr = ["Q3 Product Roadmap", "Strategic Milestones"]
+        slide_title = SmartNamer.generate_title(slide_ocr, app_name="Slides", category="Slides & Presentation")
+        self.assertIn("Roadmap", slide_title)
+
+        # Test physical file rename
+        dummy_file = os.path.join(self.temp_dir.name, "Screen Recording 2026-11-15 at 10.00.00.mov")
+        with open(dummy_file, "w") as f:
+            f.write("content")
+
+        new_path = SmartNamer.rename_recording_file(dummy_file, title)
+        self.assertTrue(os.path.exists(new_path))
+        self.assertFalse(os.path.exists(dummy_file))
+        self.assertIn("TypeError", os.path.basename(new_path))
 
 
 if __name__ == "__main__":

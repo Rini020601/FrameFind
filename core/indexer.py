@@ -13,6 +13,7 @@ from .database import SearchDatabase
 from .video import VideoProcessor, THUMBNAIL_DIR
 from .ocr import get_ocr_engine
 from .classifier import CaptureClassifier
+from .namer import SmartNamer
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +22,9 @@ SUPPORTED_IMAGE_EXTS = {".png", ".jpg", ".jpeg"}
 
 
 class IndexerPipeline:
-    def __init__(self, db: Optional[SearchDatabase] = None):
+    def __init__(self, db: Optional[SearchDatabase] = None, auto_rename: bool = True):
         self.db = db or SearchDatabase()
+        self.auto_rename = auto_rename
         self.video_processor = VideoProcessor(sample_interval_sec=2.0, scene_change_thresh=0.15)
         self.ocr_engine = get_ocr_engine()
 
@@ -134,6 +136,24 @@ class IndexerPipeline:
                 UPDATE records SET category = ?, app_name = ? WHERE id = ?
             """, (category, inferred_app, record_id))
 
+        # Content-based smart renaming
+        filename = os.path.basename(file_path)
+        is_generic_name = (
+            filename.startswith("Screen Recording") or
+            filename.startswith("ScreenShot") or
+            filename.startswith("Screen Shot")
+        )
+        if self.auto_rename and is_generic_name:
+            smart_title = SmartNamer.generate_title(all_detected_text, inferred_app, category, file_path)
+            try:
+                new_path = SmartNamer.rename_recording_file(file_path, smart_title)
+                if new_path != file_path:
+                    self.db.update_record_file_path(record_id, new_path, os.path.basename(new_path))
+                    file_path = new_path
+                    logger.info(f"Auto-renamed recording to: {os.path.basename(new_path)}")
+            except Exception as e:
+                logger.warning(f"Auto-rename failed: {e}")
+
         if progress_cb:
             progress_cb(1.0, f"Done! Indexed {event_count} chapters ({category})")
 
@@ -189,6 +209,24 @@ class IndexerPipeline:
             "is_keyframe": 1,
             "frame_thumb_path": file_path
         })
+
+        # Content-based smart renaming for screenshots
+        filename = os.path.basename(file_path)
+        is_generic_name = (
+            filename.startswith("Screen Recording") or
+            filename.startswith("ScreenShot") or
+            filename.startswith("Screen Shot")
+        )
+        if self.auto_rename and is_generic_name:
+            smart_title = SmartNamer.generate_title([ocr_text], inferred_app, category, file_path)
+            try:
+                new_path = SmartNamer.rename_recording_file(file_path, smart_title)
+                if new_path != file_path:
+                    self.db.update_record_file_path(record_id, new_path, os.path.basename(new_path))
+                    file_path = new_path
+                    logger.info(f"Auto-renamed screenshot to: {os.path.basename(new_path)}")
+            except Exception as e:
+                logger.warning(f"Auto-rename failed: {e}")
 
         if progress_cb:
             progress_cb(1.0, f"Screenshot indexed ({category})")

@@ -295,6 +295,19 @@ class SearchDatabase:
             """, (record_id,))
             self.conn.execute("DELETE FROM records WHERE id = ?", (record_id,))
 
+    def update_record_file_path(self, record_id: int, new_path: str, new_name: str):
+        """Update file path and name on disk and sync with FTS5."""
+        with self.conn:
+            self.conn.execute("""
+                UPDATE records SET file_path = ?, file_name = ? WHERE id = ?
+            """, (new_path, new_name, record_id))
+
+            # Sync new file_name in events_fts
+            self.conn.execute("""
+                UPDATE events_fts SET file_name = ?
+                WHERE rowid IN (SELECT id FROM events WHERE record_id = ?)
+            """, (new_name, record_id))
+
     def get_stats(self) -> Dict[str, Any]:
         """Aggregate summary statistics for the portfolio dashboard."""
         cur = self.conn.execute("""

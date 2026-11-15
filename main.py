@@ -19,11 +19,12 @@ from typing import List
 from core.database import SearchDatabase
 from core.indexer import IndexerPipeline
 from core.watcher import CaptureWatcher
+from core.namer import SmartNamer
 
 
-def cli_index(paths: List[str]):
+def cli_index(paths: List[str], auto_rename: bool = True):
     db = SearchDatabase()
-    pipeline = IndexerPipeline(db=db)
+    pipeline = IndexerPipeline(db=db, auto_rename=auto_rename)
 
     target_files = []
     for p in paths:
@@ -93,6 +94,37 @@ def cli_watch():
         watcher.stop()
 
 
+def cli_rename(target: str):
+    db = SearchDatabase()
+    rec = None
+    if target.isdigit():
+        rec = db.get_record(int(target))
+    else:
+        abs_path = os.path.abspath(target)
+        for r in db.get_recent_records(limit=200):
+            if os.path.abspath(r["file_path"]) == abs_path or r["file_name"] == os.path.basename(target):
+                rec = r
+                break
+
+    if not rec:
+        print(f"❌ Recording '{target}' not found in database. Index it first.")
+        return
+
+    events = db.get_record_events(rec["id"])
+    all_text = [e.get("ocr_text", "") for e in events]
+    suggested = SmartNamer.generate_title(all_text, rec.get("app_name", "macOS"), rec.get("category", "General"), rec["file_path"])
+
+    print(f"Current Name:   {rec['file_name']}")
+    print(f"Suggested Name: {suggested}")
+    try:
+        new_path = SmartNamer.rename_recording_file(rec["file_path"], suggested)
+        new_name = os.path.basename(new_path)
+        db.update_record_file_path(rec["id"], new_path, new_name)
+        print(f"✅ Renamed on disk to: {new_name}")
+    except Exception as e:
+        print(f"❌ Failed to rename: {e}")
+
+
 def cli_stats():
     db = SearchDatabase()
     stats = db.get_stats()
@@ -116,6 +148,11 @@ def main():
     # index command
     idx_p = subparsers.add_parser("index", help="Index media files or folder")
     idx_p.add_argument("paths", nargs="+", help="Files or directories to index")
+    idx_p.add_argument("--no-auto-rename", action="store_true", help="Disable automatic content-based renaming")
+
+    # rename command
+    ren_p = subparsers.add_parser("rename", help="Smart-rename a recording based on its OCR content")
+    ren_p.add_argument("target", help="File path or record ID to rename")
 
     # search command
     srch_p = subparsers.add_parser("search", help="Search indexed media")
@@ -130,7 +167,9 @@ def main():
     args = parser.parse_args()
 
     if args.command == "index":
-        cli_index(args.paths)
+        cli_index(args.paths, auto_rename=not args.no_auto_rename)
+    elif args.command == "rename":
+        cli_rename(args.target)
     elif args.command == "search":
         cli_search(args.query)
     elif args.command == "watch":

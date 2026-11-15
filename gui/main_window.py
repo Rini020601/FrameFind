@@ -29,13 +29,14 @@ class IndexWorker(QThread):
     finished_signal = Signal(str, int)  # file_path, record_id
     error_signal = Signal(str, str)     # file_path, error_msg
 
-    def __init__(self, file_paths: list, db: SearchDatabase):
+    def __init__(self, file_paths: list, db: SearchDatabase, auto_rename: bool = True):
         super().__init__()
         self.file_paths = file_paths
         self.db = db
+        self.auto_rename = auto_rename
 
     def run(self):
-        pipeline = IndexerPipeline(db=self.db)
+        pipeline = IndexerPipeline(db=self.db, auto_rename=self.auto_rename)
         total = len(self.file_paths)
         for i, path in enumerate(self.file_paths):
             def on_progress(pct, msg):
@@ -60,6 +61,7 @@ class MainWindow(QMainWindow):
         self.db = SearchDatabase()
         self.current_filter_type = "all"
         self.current_category = "all"
+        self.auto_rename_enabled = True
 
         self._init_ui()
         self._init_watcher()
@@ -92,6 +94,13 @@ class MainWindow(QMainWindow):
         top_row.addWidget(self.watcher_badge)
 
         top_row.addStretch()
+
+        self.auto_rename_btn = QPushButton("✨ Auto-Rename: ON")
+        self.auto_rename_btn.setObjectName("filterChip")
+        self.auto_rename_btn.setCheckable(True)
+        self.auto_rename_btn.setChecked(True)
+        self.auto_rename_btn.clicked.connect(self._toggle_auto_rename)
+        top_row.addWidget(self.auto_rename_btn)
 
         self.stats_btn = QPushButton("📊 Library Stats")
         self.stats_btn.clicked.connect(self._show_stats_dialog)
@@ -190,6 +199,7 @@ class MainWindow(QMainWindow):
         self.inspector_widget = ChaptersInspectorWidget()
         self.inspector_widget.jump_to_timestamp_signal.connect(self.player_widget.jump_to)
         self.inspector_widget.file_compressed_signal.connect(self._on_file_compressed)
+        self.inspector_widget.file_renamed_signal.connect(self._on_file_renamed)
         right_splitter.addWidget(self.inspector_widget)
 
         # Connect player position signal to chapters highlight
@@ -269,11 +279,24 @@ class MainWindow(QMainWindow):
         self.status_msg_label.setText(f"Starting indexing of {len(file_paths)} file(s)...")
         self.status_msg_label.show()
 
-        self.worker = IndexWorker(file_paths, self.db)
+        self.worker = IndexWorker(file_paths, self.db, auto_rename=self.auto_rename_enabled)
         self.worker.progress_signal.connect(self._on_index_progress)
         self.worker.finished_signal.connect(self._on_index_single_finished)
         self.worker.finished.connect(self._on_index_all_done)
         self.worker.start()
+
+    def _toggle_auto_rename(self):
+        self.auto_rename_enabled = self.auto_rename_btn.isChecked()
+        state = "ON" if self.auto_rename_enabled else "OFF"
+        self.auto_rename_btn.setText(f"✨ Auto-Rename: {state}")
+
+    def _on_file_renamed(self, record_id: int, new_path: str, new_name: str):
+        self.db.update_record_file_path(record_id, new_path, new_name)
+        self._refresh_library()
+        self.player_widget.load_media(
+            new_path,
+            is_video=new_path.lower().endswith(('.mov', '.mp4', '.m4v'))
+        )
 
     def _on_index_progress(self, pct: float, msg: str):
         self.progress_bar.setValue(int(pct * 100))

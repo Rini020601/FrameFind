@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QListWidget, QListWidgetItem, QTextEdit, QPushButton,
-    QLabel, QMessageBox, QFileDialog, QApplication
+    QLabel, QMessageBox, QFileDialog, QApplication, QInputDialog
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QClipboard
@@ -17,11 +17,13 @@ from PIL import Image
 
 from core.redactor import PrivacyRedactor
 from core.compressor import VideoCompressor
+from core.namer import SmartNamer
 
 
 class ChaptersInspectorWidget(QWidget):
     jump_to_timestamp_signal = Signal(float)
     file_compressed_signal = Signal(str)
+    file_renamed_signal = Signal(int, str, str)  # record_id, new_path, new_name
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -45,6 +47,15 @@ class ChaptersInspectorWidget(QWidget):
         self.chapters_list = QListWidget()
         self.chapters_list.itemClicked.connect(self._on_chapter_clicked)
         ch_layout.addWidget(self.chapters_list)
+
+        ch_btn_row = QHBoxLayout()
+        self.rename_btn = QPushButton("🏷️ Smart Rename File")
+        self.rename_btn.setObjectName("primaryBtn")
+        self.rename_btn.clicked.connect(self._smart_rename_file)
+        ch_btn_row.addWidget(self.rename_btn)
+        ch_btn_row.addStretch()
+        ch_layout.addLayout(ch_btn_row)
+
         self.tabs.addTab(self.tab_chapters, "🕒 Chapters & Events")
 
         # Tab 2: OCR Text Inspector
@@ -188,6 +199,40 @@ class ChaptersInspectorWidget(QWidget):
             ts = ev.get("timestamp_sec", 0.0)
             self.jump_to_timestamp_signal.emit(ts)
             self.ocr_text_edit.setPlainText(ev.get("ocr_text", ""))
+
+    def _smart_rename_file(self):
+        if not self.current_record:
+            QMessageBox.information(self, "Rename", "No recording or screenshot selected.")
+            return
+
+        file_path = self.current_record["file_path"]
+        if not os.path.exists(file_path):
+            QMessageBox.warning(self, "Error", f"File not found on disk:\n{file_path}")
+            return
+
+        all_text = [e.get("ocr_text", "") for e in self.current_events]
+        app_name = self.current_record.get("app_name", "macOS")
+        category = self.current_record.get("category", "General")
+
+        suggested_title = SmartNamer.generate_title(all_text, app_name, category, file_path)
+
+        new_title, ok = QInputDialog.getText(
+            self, "Smart Rename File",
+            "Auto-generated name based on on-screen text:\n(You can edit or confirm)",
+            text=suggested_title
+        )
+
+        if ok and new_title.strip():
+            try:
+                new_path = SmartNamer.rename_recording_file(file_path, new_title.strip())
+                new_name = os.path.basename(new_path)
+                rec_id = self.current_record["id"]
+                self.current_record["file_path"] = new_path
+                self.current_record["file_name"] = new_name
+                self.file_renamed_signal.emit(rec_id, new_path, new_name)
+                QMessageBox.information(self, "Renamed Successfully! 🎉", f"File renamed to:\n{new_name}")
+            except Exception as e:
+                QMessageBox.critical(self, "Rename Error", f"Failed to rename file: {e}")
 
     def _copy_ocr_text(self):
         text = self.ocr_text_edit.toPlainText()

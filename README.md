@@ -69,6 +69,14 @@ If you recorded a 15-minute lecture or a bug reproduction, finding the exact 5 s
 
 ## ✨ Key Features
 
+- **✨ Content-Aware Smart Auto-Renaming**:
+  - Replaces generic macOS names (`Screen Recording 2026-11-15 at 16.30.12.mov`) with human-readable titles synthesized from on-screen OCR content:
+    - Code: `VS Code - TypeError Bug (2026-11-15).mp4`
+    - Slides: `Slides - Q3 Product Roadmap (2026-11-15).mp4`
+    - Terminal: `Terminal - Docker Build Error (2026-11-15).mp4`
+  - Renames the physical file on disk and syncs SQLite search index atomically.
+  - Can be toggled on/off in the header bar or executed via 1-click `🏷️ Smart Rename` in the Inspector.
+
 - **🚀 Native Apple Vision Framework (`pyobjc-framework-Vision`)**:
   - Runs directly on Apple Silicon's Neural Engine.
   - Zero external C-binary dependencies (no Tesseract installation required).

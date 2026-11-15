@@ -7,6 +7,7 @@ from .video import VideoProcessor
 from .classifier import CaptureClassifier
 from .redactor import PrivacyRedactor
 from .compressor import VideoCompressor
+from .namer import SmartNamer
 from .indexer import IndexerPipeline
 from .watcher import CaptureWatcher
 
@@ -18,6 +19,7 @@ __all__ = [
     "CaptureClassifier",
     "PrivacyRedactor",
     "VideoCompressor",
+    "SmartNamer",
     "IndexerPipeline",
     "CaptureWatcher"
 ]
