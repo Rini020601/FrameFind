@@ -28,18 +28,21 @@ MEETING_KEYWORDS = {
 }
 
 APP_SIGNATURES = [
-    (r"(?i)\b(visual studio code|vs code|code)\b", "VS Code"),
+    (r"(?i)\b(visual studio code|vs code)\b", "VS Code"),
     (r"(?i)\b(terminal|iterm|zsh|bash)\b", "Terminal"),
     (r"(?i)\b(xcode)\b", "Xcode"),
     (r"(?i)\b(google chrome|chrome)\b", "Google Chrome"),
+    (r"(?i)\b(apple maps|maps)\b", "Apple Maps"),
     (r"(?i)\b(safari)\b", "Safari"),
     (r"(?i)\b(slack)\b", "Slack"),
     (r"(?i)\b(zoom\.us|zoom)\b", "Zoom"),
     (r"(?i)\b(figma)\b", "Figma"),
     (r"(?i)\b(notion)\b", "Notion"),
+    (r"(?i)\b(github\.com|github)\b", "GitHub"),
     (r"(?i)\b(postman)\b", "Postman"),
     (r"(?i)\b(pycharm|intellij|webstorm)\b", "JetBrains IDE"),
     (r"(?i)\b(keynote|powerpoint|slides)\b", "Slides"),
+    (r"(?i)\b(finder)\b", "Finder"),
 ]
 
 
