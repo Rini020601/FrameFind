@@ -1,0 +1,18 @@
+# Virtual Environment
+.venv/
+env/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Local SQLite & Thumbnails data
+.data/
+*.db
+*.db-journal
+
+# macOS files
+.DS_Store
