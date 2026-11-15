@@ -220,5 +220,50 @@ class TestScreenrecordManager(unittest.TestCase):
         self.assertIn("SyntaxError", record["file_name"])
 
 
+    def test_chrome_active_tab_detection(self):
+        """
+        SmartNamer must pick the ACTIVE Chrome tab (no trailing X) rather than
+        background tabs (which Chrome renders with a close-button 'X' that OCR picks up)
+        or low-variety noise strings like '000000000'.
+        """
+        # Simulate OCR bounding-box events from a Chrome recording where:
+        #   - "German A1 A2 Study Plan X"  → background tab
+        #   - "Python MacBook Air Proje X" → background tab
+        #   - "Sunrise Planner"            → ACTIVE tab (no X)
+        #   - "Adding an email address X" → background tab
+        #   - "000000000"                  → content noise (all same digit)
+        events = [
+            {
+                "bounding_boxes": [
+                    # Menu bar: Chrome app name
+                    {"text": "Chrome",         "box": [0.03, 0.02, 0.05, 0.015]},
+                    # Tab strip (y between 0.028 and 0.078)
+                    {"text": "German A1 A2 Study Plan X",  "box": [0.10, 0.056, 0.14, 0.018]},
+                    {"text": "Python MacBook Air Proje X", "box": [0.26, 0.056, 0.14, 0.018]},
+                    {"text": "Sunrise Planner",            "box": [0.39, 0.056, 0.10, 0.018]},
+                    {"text": "Adding an email address X",  "box": [0.52, 0.056, 0.14, 0.018]},
+                    # Content noise mid-screen
+                    {"text": "000000000",  "box": [0.35, 0.45, 0.30, 0.03]},
+                    {"text": "HIGHLIGHTS OF THE YEAR", "box": [0.30, 0.20, 0.40, 0.025]},
+                ],
+            }
+        ]
+
+        title = SmartNamer.generate_title(
+            all_ocr_text=["Google Chrome\nSunrise Planner\n000000000\nHIGHLIGHTS OF THE YEAR"],
+            app_name="Google Chrome",
+            category="Browser",
+            original_path="/Users/test/Documents/Screen Recording 2026-11-15 at 16.30.12.mov",
+            events=events,
+        )
+
+        # Must contain the active tab name
+        self.assertIn("Sunrise Planner", title, f"Expected 'Sunrise Planner' in title but got: {title!r}")
+        # Must NOT contain the noise string
+        self.assertNotIn("000000000", title, f"Noise string '000000000' leaked into title: {title!r}")
+        # Must NOT contain background tab text
+        self.assertNotIn("German", title, f"Background tab text leaked into title: {title!r}")
+
+
 if __name__ == "__main__":
     unittest.main()

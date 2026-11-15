@@ -21,7 +21,7 @@ UI_STOPWORDS = {
     "watch grey's anat...", "clever ai humaniz...", "german a", "python ma",
     "click to stop screen recording", "click o to stop screen recording",
     "relaunch to update", "exercism", "sign in to consula...", "visa",
-    "sunrise planner", "adding an email address",
+    "adding an email address",
 
     # macOS window & menu bar noise
     "file", "edit", "view", "window", "help", "favourites", "recents",
@@ -32,7 +32,18 @@ UI_STOPWORDS = {
 
     # Own app UI tokens (prevent self-referential renaming)
     "screenrecord manager", "auto-rename", "library stats", "watcher: desktop active",
-    "all captures", "search any text", "jump to timestamp", "privacy redactor"
+    "all captures", "search any text", "jump to timestamp", "privacy redactor",
+
+    # Planner / wellness widget noise
+    "highlights of the year", "highlights of the month", "today's quote",
+    "today's notes", "mini notepad", "mood", "someday tasks", "wellness",
+    "supplements", "gratitude", "habit tracker", "daily planner", "weekly planner",
+    "morning routine", "evening routine", "water intake", "sleep tracker",
+
+    # Generic Chrome extension / sidebar noise
+    "new chat", "library", "my day", "today", "upcoming", "all tasks",
+    "add a task", "try copilot", "my analytics", "pinned", "done", "inbox",
+    "search or create", "home", "calendar", "habits", "goals",
 }
 
 KNOWN_MACOS_APPS = {
@@ -102,6 +113,58 @@ class SmartNamer:
             app_name = detected_app
 
         subject = None
+
+        # -------------------------------------------------------------
+        # 1.5  ACTIVE BROWSER TAB DETECTION (Chrome / Safari tab strip)
+        # Chrome draws a horizontal tab strip at y ≈ 0.030–0.075.
+        # Active tab = the tab label that does NOT have a trailing close-
+        # button "X" (Chrome appends " X" OCR artifact to background tabs).
+        # -------------------------------------------------------------
+        if events_list and app_name in ("Google Chrome", "Safari", "macOS"):
+            tab_zone_texts: Dict[str, int] = {}
+            bg_tabs: set = set()
+
+            for e in events_list:
+                for b in e.get("bounding_boxes", []):
+                    x, y, w, h = b.get("box", [0, 0, 0, 0])
+                    txt = b.get("text", "").strip()
+
+                    # Must be in tab-strip zone
+                    if not (0.028 <= y <= 0.078 and x > 0.09):
+                        continue
+                    if len(txt) < 4 or h < 0.007:
+                        continue
+                    # Skip obvious system-clock / single-char favicon artifacts
+                    if len(txt) <= 2 or re.match(r'^\d{1,2}:\d{2}', txt):
+                        continue
+                    # Skip known noise phrases
+                    if txt.lower() in UI_STOPWORDS:
+                        continue
+
+                    # Background tab: ends with trailing close-button " X"
+                    if re.search(r'\s+[Xx×]$', txt):
+                        clean = re.sub(r'\s+[Xx×]$', '', txt).strip()
+                        bg_tabs.add(clean.lower())
+                    else:
+                        # Candidate for active tab
+                        tab_zone_texts[txt] = tab_zone_texts.get(txt, 0) + 1
+
+            # Active tab candidates are those that never appeared as background
+            active_candidates = {
+                k: v for k, v in tab_zone_texts.items()
+                if k.lower() not in bg_tabs
+                and k.lower() not in UI_STOPWORDS
+                and not re.match(r'^[\d\s]+$', k)          # reject all-digit strings
+                and len(set(k.lower())) > 2                 # reject "000000000"
+                and len(k) >= 4
+            }
+
+            if active_candidates:
+                active_tab = max(active_candidates, key=active_candidates.get)
+                subject = active_tab
+                # If we didn't detect app from menu bar, infer Chrome
+                if app_name == "macOS":
+                    app_name = "Google Chrome"
 
         # -------------------------------------------------------------
         # 2. URL & WEBSITE CONTEXT (GitHub, Google Search, etc.)
@@ -230,6 +293,13 @@ class SmartNamer:
                 t_lower = raw_text.lower()
 
                 if len(raw_text) < 3 or t_lower in UI_STOPWORDS or any(s in t_lower for s in ["screenrecord manager", "click to stop"]):
+                    continue
+
+                # Reject all-digit strings (e.g. "000000000", "123456")
+                if re.match(r'^[\d\s]+$', raw_text):
+                    continue
+                # Reject low-variety strings like "000000000" (≤2 unique chars)
+                if len(set(raw_text.lower().replace(' ', ''))) <= 2:
                     continue
 
                 box = b.get("box", [0, 0, 0, 0])
