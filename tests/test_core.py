@@ -188,6 +188,37 @@ class TestScreenrecordManager(unittest.TestCase):
         self.assertFalse(os.path.exists(dummy_file))
         self.assertIn("TypeError", os.path.basename(new_path))
 
+    def test_automatic_finder_renaming_flow(self):
+        """Simulate real macOS screen recording landing in Finder and getting auto-renamed."""
+        # 1. Create a file with generic macOS screen recording name
+        rec_path = os.path.join(self.temp_dir.name, "Screen Recording 2026-11-15 at 20.15.30.mp4")
+        w, h = 640, 360
+        fps = 10
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(rec_path, fourcc, fps, (w, h))
+        for _ in range(15):
+            frame = np.full((h, w, 3), 30, dtype=np.uint8)
+            cv2.putText(frame, "VS Code - server.py", (40, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (220, 220, 220), 2)
+            cv2.putText(frame, "SyntaxError: unexpected EOF while parsing", (40, 160), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 255), 2)
+            out.write(frame)
+        out.release()
+
+        self.assertTrue(os.path.exists(rec_path))
+
+        # 2. Pipeline runs with auto_rename=True (as the background daemon does)
+        pipeline = IndexerPipeline(db=self.db, auto_rename=True)
+        rec_id = pipeline.index_file(rec_path)
+        self.assertIsNotNone(rec_id)
+
+        # 3. Verify original generic name NO LONGER EXISTS on disk
+        self.assertFalse(os.path.exists(rec_path))
+
+        # 4. Verify file was renamed on disk to content-based title
+        record = self.db.get_record(rec_id)
+        new_path = record["file_path"]
+        self.assertTrue(os.path.exists(new_path))
+        self.assertIn("SyntaxError", record["file_name"])
+
 
 if __name__ == "__main__":
     unittest.main()

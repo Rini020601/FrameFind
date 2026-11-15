@@ -20,6 +20,7 @@ from core.database import SearchDatabase
 from core.indexer import IndexerPipeline
 from core.watcher import CaptureWatcher
 from core.namer import SmartNamer
+from core.auto_renamer import ScreenrecordDaemon
 
 
 def cli_index(paths: List[str], auto_rename: bool = True):
@@ -76,22 +77,10 @@ def cli_search(query: str):
 
 
 def cli_watch():
-    print("👀 Starting Screenrecord Watcher Daemon on ~/Desktop...")
-    print("Press Ctrl+C to stop.\n")
-
-    def on_detected(path):
-        print(f"⚡ New capture detected: {path}")
-        cli_index([path])
-
-    watcher = CaptureWatcher(on_file_detected=on_detected)
-    watcher.start()
-    try:
-        import time
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\nStopping watcher...")
-        watcher.stop()
+    print("👀 Starting Background Auto-Renamer Daemon...")
+    print("Captures saved to Desktop/Finder will be automatically renamed based on their content.\n")
+    daemon = ScreenrecordDaemon()
+    daemon.start(blocking=True)
 
 
 def cli_rename(target: str):
@@ -159,7 +148,11 @@ def main():
     srch_p.add_argument("query", help="Text/query to search")
 
     # watch command
-    subparsers.add_parser("watch", help="Run background watcher daemon")
+    subparsers.add_parser("watch", help="Run background auto-renamer daemon")
+
+    # daemon command
+    d_p = subparsers.add_parser("daemon", help="Manage background LaunchAgent service")
+    d_p.add_argument("action", choices=["start", "install", "uninstall", "status"], help="Daemon action")
 
     # stats command
     subparsers.add_parser("stats", help="Show library statistics")
@@ -174,6 +167,16 @@ def main():
         cli_search(args.query)
     elif args.command == "watch":
         cli_watch()
+    elif args.command == "daemon":
+        from daemon import install_launch_agent, uninstall_launch_agent, status_launch_agent
+        if args.action == "start":
+            cli_watch()
+        elif args.action == "install":
+            install_launch_agent()
+        elif args.action == "uninstall":
+            uninstall_launch_agent()
+        elif args.action == "status":
+            status_launch_agent()
     elif args.command == "stats":
         cli_stats()
     else:

@@ -102,6 +102,10 @@ class MainWindow(QMainWindow):
         self.auto_rename_btn.clicked.connect(self._toggle_auto_rename)
         top_row.addWidget(self.auto_rename_btn)
 
+        self.daemon_btn = QPushButton("⚙️ Background Service")
+        self.daemon_btn.clicked.connect(self._show_daemon_dialog)
+        top_row.addWidget(self.daemon_btn)
+
         self.stats_btn = QPushButton("📊 Library Stats")
         self.stats_btn.clicked.connect(self._show_stats_dialog)
         top_row.addWidget(self.stats_btn)
@@ -329,6 +333,41 @@ class MainWindow(QMainWindow):
             f"<i>Powered by Apple Silicon Vision Neural Engine & SQLite FTS5</i>"
         )
         QMessageBox.information(self, "Screenrecord Manager Stats", msg)
+
+    def _show_daemon_dialog(self):
+        from daemon import PLIST_PATH, LAUNCH_AGENT_LABEL, install_launch_agent, uninstall_launch_agent
+        import subprocess
+
+        is_installed = PLIST_PATH.exists()
+        is_running = False
+        if is_installed:
+            res = subprocess.run(["launchctl", "list"], capture_output=True, text=True, check=False)
+            is_running = LAUNCH_AGENT_LABEL in res.stdout
+
+        status_str = "🟢 Active (Running on macOS Startup)" if is_running else ("🟡 Installed (Idle)" if is_installed else "🔴 Not Installed")
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("macOS Background Auto-Renamer Service")
+        msg.setText(
+            f"<b>Zero-Touch Background Auto-Renamer</b><br><br>"
+            f"Status: <b>{status_str}</b><br><br>"
+            f"When installed, macOS will automatically run the auto-renamer in the background on startup. "
+            f"Whenever you record a video (Cmd+Shift+5) or take a screenshot, it will be automatically "
+            f"analyzed with Apple Vision OCR and renamed right in Finder without needing to open this app."
+        )
+
+        install_btn = msg.addButton("🚀 Install Login Service", QMessageBox.ActionRole)
+        uninstall_btn = msg.addButton("🛑 Uninstall Service", QMessageBox.ActionRole)
+        close_btn = msg.addButton("Close", QMessageBox.RejectRole)
+
+        msg.exec()
+
+        if msg.clickedButton() == install_btn:
+            install_launch_agent()
+            QMessageBox.information(self, "Installed", "macOS Background Auto-Renamer installed successfully!\nCaptures in Finder will now be automatically renamed.")
+        elif msg.clickedButton() == uninstall_btn:
+            uninstall_launch_agent()
+            QMessageBox.information(self, "Uninstalled", "Background service uninstalled.")
 
     # Drag and Drop handlers
     def dragEnterEvent(self, event: QDragEnterEvent):

@@ -124,7 +124,25 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### 3. CLI Commands
+### 3. Zero-Touch Background Auto-Renamer (No App Opening Required)
+
+If you don't want to open any app and just want macOS screen recordings to **automatically rename themselves in Finder / Recents** as soon as you record:
+
+```bash
+# Option A: Install as a silent macOS startup service (starts automatically on login):
+python daemon.py install
+
+# Check service status:
+python daemon.py status
+
+# Option B: Run directly in terminal:
+python daemon.py start
+
+# To uninstall the background service:
+python daemon.py uninstall
+```
+
+### 4. CLI Commands
 
 ```bash
 # Index a video or an entire directory of recordings:
@@ -136,8 +154,8 @@ python main.py search "TypeError"
 # View indexed library statistics:
 python main.py stats
 
-# Run the background watcher daemon in terminal:
-python main.py watch
+# Smart-rename an existing capture:
+python main.py rename "path/to/Screen Recording.mov"
 ```
 
 ---
