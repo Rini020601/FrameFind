@@ -12,6 +12,7 @@ When a new generic recording or screenshot is saved, it automatically:
 
 import os
 import time
+import threading
 import subprocess
 import logging
 from typing import List, Optional, Callable
@@ -19,21 +20,28 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 from .database import SearchDatabase
-from .indexer import IndexerPipeline
+from .indexer import IndexerPipeline, GENERIC_CAPTURE_PREFIXES
+from .logging_setup import setup_logging
 from .namer import SmartNamer
 
 logger = logging.getLogger("AutoRenamer")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-
-GENERIC_PREFIXES = (
-    "Screen Recording",
-    "Screen Shot",
-    "ScreenShot",
-    "Screenshot",
-    "ScreenCapture"
-)
 
 SUPPORTED_EXTS = (".mov", ".mp4", ".m4v", ".png", ".jpg", ".jpeg")
+
+
+def get_frontmost_application() -> Optional[str]:
+    """Capture the active macOS app while a screenshot event is fresh."""
+    try:
+        from AppKit import NSWorkspace
+
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        name = app.localizedName() if app else None
+        if name in ("Screenshot", "screencaptureui", "loginwindow"):
+            return None
+        return name
+    except Exception:
+        logger.debug("Could not determine the frontmost application", exc_info=True)
+        return None
 
 
 def get_macos_screencapture_location() -> str:
@@ -69,16 +77,43 @@ class SilentCaptureHandler(FileSystemEventHandler):
         self.pipeline = pipeline
         self.on_renamed = on_renamed
         self._processing = set()
+        self._processed_signatures = {}
+        self._lock = threading.Lock()
 
     def on_created(self, event):
         if not event.is_directory:
-            self._process_file(event.src_path)
+            try:
+                self._process_file(event.src_path, app_hint=get_frontmost_application())
+            except Exception:
+                logger.exception("Capture-created event failed for %s", event.src_path)
 
     def on_modified(self, event):
         if not event.is_directory:
-            self._process_file(event.src_path)
+            try:
+                self._process_file(event.src_path, app_hint=get_frontmost_application())
+            except Exception:
+                logger.exception("Capture-modified event failed for %s", event.src_path)
 
-    def _process_file(self, file_path: str):
+    def on_moved(self, event):
+        if not event.is_directory:
+            try:
+                self._process_file(event.dest_path, app_hint=get_frontmost_application())
+            except Exception:
+                logger.exception("Capture-moved event failed for %s", event.dest_path)
+
+    def on_closed(self, event):
+        if not event.is_directory:
+            try:
+                self._process_file(event.src_path, app_hint=get_frontmost_application())
+            except Exception:
+                logger.exception("Capture-closed event failed for %s", event.src_path)
+
+    @staticmethod
+    def _file_signature(file_path: str):
+        stat_result = os.stat(file_path)
+        return stat_result.st_size, stat_result.st_mtime_ns
+
+    def _process_file(self, file_path: str, app_hint: Optional[str] = None):
         filename = os.path.basename(file_path)
 
         # Ignore hidden, temporary, or already processed files
@@ -91,16 +126,33 @@ class SilentCaptureHandler(FileSystemEventHandler):
             return
 
         # Only process generic macOS captures ("Screen Recording ...", "Screen Shot ...")
-        if not any(filename.startswith(prefix) for prefix in GENERIC_PREFIXES):
+        if not filename.startswith(GENERIC_CAPTURE_PREFIXES):
             return
 
-        self._processing.add(file_path)
+        with self._lock:
+            if file_path in self._processing:
+                return
+            try:
+                signature = self._file_signature(file_path)
+            except OSError:
+                return
+            if self._processed_signatures.get(file_path) == signature:
+                return
+            self._processing.add(file_path)
         try:
-            self._wait_and_rename(file_path)
+            self._wait_and_rename(file_path, app_hint=app_hint)
+        except Exception:
+            # A malformed capture must not terminate watchdog's dispatch thread.
+            logger.exception("Unexpected failure while processing %s", file_path)
         finally:
             self._processing.discard(file_path)
+            if os.path.exists(file_path):
+                try:
+                    self._processed_signatures[file_path] = self._file_signature(file_path)
+                except OSError:
+                    pass
 
-    def _wait_and_rename(self, file_path: str):
+    def _wait_and_rename(self, file_path: str, app_hint: Optional[str] = None):
         logger.info(f"Detected new macOS capture: {os.path.basename(file_path)}")
 
         # 1. Debounce and wait for macOS to finish saving the file (poll every 0.35s)
@@ -134,7 +186,7 @@ class SilentCaptureHandler(FileSystemEventHandler):
         # 2. Run IndexerPipeline with auto_rename=True
         # This extracts keyframes, runs Apple Vision OCR, generates the smart name,
         # renames the file on disk in Finder, and stores the record in SQLite!
-        rec_id = self.pipeline.index_file(file_path)
+        rec_id = self.pipeline.index_file(file_path, app_hint=app_hint)
         if not rec_id:
             logger.warning(f"Could not index or rename: {file_path}")
             return
@@ -165,9 +217,26 @@ class SilentCaptureHandler(FileSystemEventHandler):
         else:
             logger.info(f"Retained name for: {old_filename}")
 
+    def process_recent(self, directories: List[str], max_age_sec: float = 600.0):
+        """Recover captures missed during service restarts or atomic file moves."""
+        cutoff = time.time() - max_age_sec
+        candidates = []
+        for directory in directories:
+            try:
+                for entry in os.scandir(directory):
+                    if entry.is_file() and entry.name.startswith(GENERIC_CAPTURE_PREFIXES):
+                        if entry.stat().st_mtime >= cutoff:
+                            candidates.append((entry.stat().st_mtime, entry.path))
+            except OSError:
+                logger.exception("Could not scan watched directory %s", directory)
+
+        for _, file_path in sorted(candidates):
+            self._process_file(file_path)
+
 
 class ScreenrecordDaemon:
     def __init__(self, custom_dirs: Optional[List[str]] = None):
+        setup_logging()
         self.db = SearchDatabase()
         self.pipeline = IndexerPipeline(db=self.db, auto_rename=True)
 
@@ -205,6 +274,7 @@ class ScreenrecordDaemon:
         self.observer.start()
         self.is_running = True
         logger.info("🚀 Screenrecord Auto-Renamer background service is active!")
+        handler.process_recent(self.watch_dirs)
 
         if blocking:
             try:

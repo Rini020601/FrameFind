@@ -18,7 +18,6 @@ from typing import List
 
 from core.database import SearchDatabase
 from core.indexer import IndexerPipeline
-from core.watcher import CaptureWatcher
 from core.namer import SmartNamer
 from core.auto_renamer import ScreenrecordDaemon
 
@@ -101,7 +100,13 @@ def cli_rename(target: str):
 
     events = db.get_record_events(rec["id"])
     all_text = [e.get("ocr_text", "") for e in events]
-    suggested = SmartNamer.generate_title(all_text, rec.get("app_name", "macOS"), rec.get("category", "General"), rec["file_path"])
+    suggested = SmartNamer.generate_title(
+        all_text,
+        rec.get("app_name", "macOS"),
+        rec.get("category", "General"),
+        rec["file_path"],
+        events=events,
+    )
 
     print(f"Current Name:   {rec['file_name']}")
     print(f"Suggested Name: {suggested}")

@@ -13,7 +13,6 @@ Usage:
 import os
 import sys
 import subprocess
-import shutil
 from pathlib import Path
 
 from core.auto_renamer import ScreenrecordDaemon
@@ -21,6 +20,23 @@ from core.auto_renamer import ScreenrecordDaemon
 LAUNCH_AGENT_LABEL = "com.screenrecord.manager"
 LAUNCH_AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
 PLIST_PATH = LAUNCH_AGENTS_DIR / f"{LAUNCH_AGENT_LABEL}.plist"
+
+
+def get_launch_agent_status():
+    """Return (installed, running) for this user's LaunchAgent."""
+    is_installed = PLIST_PATH.exists()
+    if not is_installed:
+        return False, False
+
+    service_target = f"gui/{os.getuid()}/{LAUNCH_AGENT_LABEL}"
+    result = subprocess.run(
+        ["launchctl", "print", service_target],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    is_running = result.returncode == 0 and "state = running" in result.stdout
+    return True, is_running
 
 
 def get_project_paths():
@@ -103,11 +119,9 @@ def uninstall_launch_agent():
 
 def status_launch_agent():
     """Check if the LaunchAgent is installed and running."""
-    is_installed = PLIST_PATH.exists()
+    is_installed, is_running = get_launch_agent_status()
     print(f"• LaunchAgent Plist Installed: {'YES' if is_installed else 'NO'}")
     if is_installed:
-        res = subprocess.run(["launchctl", "list"], capture_output=True, text=True, check=False)
-        is_running = LAUNCH_AGENT_LABEL in res.stdout
         print(f"• Service Running in Background: {'🟢 ACTIVE' if is_running else '🔴 STOPPED'}")
     else:
         print("• Service Running in Background: 🔴 NOT INSTALLED")

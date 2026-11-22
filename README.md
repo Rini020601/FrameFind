@@ -1,6 +1,6 @@
-# ⚡ Screenrecord Manager
+# ⚡ FrameFind (Screenrecord Manager)
 
-> **Intelligent Screen-Recording & Screenshot Indexer with Native Apple Vision OCR, Jump-to-Timestamp Search, Privacy Redaction, and VideoToolbox Compression for macOS.**
+> **Smart Auto-Naming, Finder Spotlight Indexing, and Jump-to-Timestamp Search for macOS Screenshots & Screen Recordings — powered by Apple Vision OCR, SQLite FTS5, and PySide6.**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![macOS](https://img.shields.io/badge/Platform-macOS%20(Apple%20Silicon%20%2F%20Intel)-black.svg)](https://apple.com)
@@ -69,13 +69,16 @@ If you recorded a 15-minute lecture or a bug reproduction, finding the exact 5 s
 
 ## ✨ Key Features
 
-- **✨ Content-Aware Smart Auto-Renaming**:
-  - Replaces generic macOS names (`Screen Recording 2026-11-15 at 16.30.12.mov`) with human-readable titles synthesized from on-screen OCR content:
-    - Code: `VS Code - TypeError Bug (2026-11-15).mp4`
-    - Slides: `Slides - Q3 Product Roadmap (2026-11-15).mp4`
-    - Terminal: `Terminal - Docker Build Error (2026-11-15).mp4`
-  - Renames the physical file on disk and syncs SQLite search index atomically.
+- **✨ App-First & Heading-Aware Smart Auto-Renaming**:
+  - Replaces generic macOS names (`Screenshot 2026-11-22 at ...png`, `Screen Recording ...mov`) with `<App> - <Heading/Title> (<Date>)`:
+    - Screenshots & Recordings: detects the active application (via macOS menu bar or frontmost app `NSWorkspace`) and selects the largest clearly visible heading on screen.
+    - Smart web context: names browser home screens after the site (e.g. `Brave Browser - YouTube (2026-11-22).png`) and ignores recommended sidebar thumbnails on YouTube watch pages.
+    - Code & Apps: `VS Code - daemon.py`, `Apple Maps - McDonald's`, `Calendar - November 2026`, `Spotify - Your Library`.
+  - Renames the physical file on disk and syncs the SQLite search index atomically.
   - Can be toggled on/off in the header bar or executed via 1-click `🏷️ Smart Rename` in the Inspector.
+
+- **🔎 Search Inside Videos Directly from macOS Finder**:
+  - Automatically writes deduplicated OCR words from every sampled frame into macOS Finder/Spotlight comments (`kMDItemFinderComment` + `mdimport`), so typing any word from inside a video in Finder finds that file.
 
 - **🚀 Native Apple Vision Framework (`pyobjc-framework-Vision`)**:
   - Runs directly on Apple Silicon's Neural Engine.
@@ -112,7 +115,8 @@ If you recorded a 15-minute lecture or a bug reproduction, finding the exact 5 s
 ### 1. Clone & Set Up Virtual Environment
 
 ```bash
-cd "Screenrecord Manager"
+git clone https://github.com/Rini020601/FrameFind.git
+cd FrameFind
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt

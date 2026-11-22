@@ -5,8 +5,12 @@ categorization, and database persistence.
 """
 
 import os
+import re
+import sys
+import plistlib
+import subprocess
 import logging
-from typing import Optional, Callable, Dict, Any
+from typing import Optional, Callable, Dict, Any, List
 from PIL import Image
 
 from .database import SearchDatabase
@@ -19,6 +23,62 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_VIDEO_EXTS = {".mov", ".mp4", ".m4v"}
 SUPPORTED_IMAGE_EXTS = {".png", ".jpg", ".jpeg"}
+GENERIC_CAPTURE_PREFIXES = (
+    "Screen Recording",
+    "Screen Shot",
+    "ScreenShot",
+    "Screenshot",
+    "ScreenCapture",
+)
+
+
+def is_generic_capture_name(file_path: str) -> bool:
+    """Return whether a path has a generic macOS capture filename."""
+    return os.path.basename(file_path).startswith(GENERIC_CAPTURE_PREFIXES)
+
+
+def write_spotlight_comment(file_path: str, ocr_texts: List[str], max_chars: int = 8000) -> bool:
+    """Write deduplicated OCR text to macOS Spotlight/Finder comments and trigger mdimport."""
+    if sys.platform != "darwin" or not os.path.exists(file_path):
+        return False
+
+    seen = set()
+    tokens: List[str] = []
+    for chunk in ocr_texts:
+        for word in re.findall(r"[A-Za-z0-9_@.-]{2,}", chunk or ""):
+            key = word.lower()
+            if key not in seen:
+                seen.add(key)
+                tokens.append(word)
+
+    if not tokens:
+        return False
+
+    comment = " ".join(tokens)[:max_chars].strip()
+    if not comment:
+        return False
+
+    try:
+        hex_val = plistlib.dumps(comment, fmt=plistlib.FMT_BINARY).hex()
+        res = subprocess.run(
+            ["xattr", "-wx", "com.apple.metadata:kMDItemFinderComment", hex_val, file_path],
+            capture_output=True,
+            check=False,
+        )
+        if res.returncode != 0:
+            return False
+        safe_comment = comment.replace("\\", "\\\\").replace('"', '\\"')
+        subprocess.run(
+            ["osascript", "-e", f'tell application "Finder" to set comment of (POSIX file "{file_path}") to "{safe_comment}"'],
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+        subprocess.run(["mdimport", file_path], capture_output=True, check=False)
+        return True
+    except Exception as e:
+        logger.debug(f"Could not write Spotlight comment for {file_path}: {e}")
+        return False
 
 
 class IndexerPipeline:
@@ -31,7 +91,8 @@ class IndexerPipeline:
     def index_file(
         self,
         file_path: str,
-        progress_cb: Optional[Callable[[float, str], None]] = None
+        progress_cb: Optional[Callable[[float, str], None]] = None,
+        app_hint: Optional[str] = None,
     ) -> Optional[int]:
         """
         Index a single video recording or screenshot.
@@ -45,9 +106,9 @@ class IndexerPipeline:
 
         ext = os.path.splitext(file_path)[1].lower()
         if ext in SUPPORTED_VIDEO_EXTS:
-            return self._index_video(file_path, progress_cb)
+            return self._index_video(file_path, progress_cb, app_hint=app_hint)
         elif ext in SUPPORTED_IMAGE_EXTS:
-            return self._index_screenshot(file_path, progress_cb)
+            return self._index_screenshot(file_path, progress_cb, app_hint=app_hint)
         else:
             logger.warning(f"Unsupported file format: {file_path}")
             return None
@@ -55,7 +116,8 @@ class IndexerPipeline:
     def _index_video(
         self,
         file_path: str,
-        progress_cb: Optional[Callable[[float, str], None]] = None
+        progress_cb: Optional[Callable[[float, str], None]] = None,
+        app_hint: Optional[str] = None,
     ) -> Optional[int]:
         if progress_cb:
             progress_cb(0.05, f"Reading metadata: {os.path.basename(file_path)}")
@@ -136,6 +198,8 @@ class IndexerPipeline:
         # Auto-classify based on aggregated text
         combined_text = "\n".join(all_detected_text[:20])
         category, inferred_app = CaptureClassifier.classify_text(combined_text)
+        if app_hint and app_hint not in ("macOS", "Unknown"):
+            inferred_app = app_hint
 
         with self.db.conn:
             self.db.conn.execute("""
@@ -143,13 +207,7 @@ class IndexerPipeline:
             """, (category, inferred_app, record_id))
 
         # Content-based smart renaming
-        filename = os.path.basename(file_path)
-        is_generic_name = (
-            filename.startswith("Screen Recording") or
-            filename.startswith("ScreenShot") or
-            filename.startswith("Screen Shot")
-        )
-        if self.auto_rename and is_generic_name:
+        if self.auto_rename and is_generic_capture_name(file_path):
             smart_title = SmartNamer.generate_title(
                 all_detected_text, inferred_app, category, file_path, events=collected_events
             )
@@ -162,6 +220,8 @@ class IndexerPipeline:
             except Exception as e:
                 logger.warning(f"Auto-rename failed: {e}")
 
+        write_spotlight_comment(file_path, all_detected_text)
+
         if progress_cb:
             progress_cb(1.0, f"Done! Indexed {event_count} chapters ({category})")
 
@@ -170,13 +230,17 @@ class IndexerPipeline:
     def _index_screenshot(
         self,
         file_path: str,
-        progress_cb: Optional[Callable[[float, str], None]] = None
+        progress_cb: Optional[Callable[[float, str], None]] = None,
+        app_hint: Optional[str] = None,
     ) -> Optional[int]:
         if progress_cb:
             progress_cb(0.1, f"Analyzing screenshot: {os.path.basename(file_path)}")
 
         try:
-            pil_img = Image.open(file_path)
+            # Detach the image from its file before OCR/rename so Finder files are
+            # never kept open by a long-running daemon process.
+            with Image.open(file_path) as source_img:
+                pil_img = source_img.convert("RGB")
             w, h = pil_img.size
         except Exception as e:
             logger.error(f"Cannot open screenshot {file_path}: {e}")
@@ -191,6 +255,8 @@ class IndexerPipeline:
 
         # Categorize
         category, inferred_app = CaptureClassifier.classify_text(ocr_text)
+        if app_hint and app_hint not in ("macOS", "Unknown"):
+            inferred_app = app_hint
 
         record_data = {
             "file_path": file_path,
@@ -219,13 +285,7 @@ class IndexerPipeline:
         })
 
         # Content-based smart renaming for screenshots
-        filename = os.path.basename(file_path)
-        is_generic_name = (
-            filename.startswith("Screen Recording") or
-            filename.startswith("ScreenShot") or
-            filename.startswith("Screen Shot")
-        )
-        if self.auto_rename and is_generic_name:
+        if self.auto_rename and is_generic_capture_name(file_path):
             smart_title = SmartNamer.generate_title(
                 [ocr_text], inferred_app, category, file_path,
                 events=[{"ocr_text": ocr_text, "bounding_boxes": boxes}]
@@ -238,6 +298,8 @@ class IndexerPipeline:
                     logger.info(f"Auto-renamed screenshot to: {os.path.basename(new_path)}")
             except Exception as e:
                 logger.warning(f"Auto-rename failed: {e}")
+
+        write_spotlight_comment(file_path, [ocr_text])
 
         if progress_cb:
             progress_cb(1.0, f"Screenshot indexed ({category})")

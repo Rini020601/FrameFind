@@ -335,14 +335,9 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Screenrecord Manager Stats", msg)
 
     def _show_daemon_dialog(self):
-        from daemon import PLIST_PATH, LAUNCH_AGENT_LABEL, install_launch_agent, uninstall_launch_agent
-        import subprocess
+        from daemon import get_launch_agent_status, install_launch_agent, uninstall_launch_agent
 
-        is_installed = PLIST_PATH.exists()
-        is_running = False
-        if is_installed:
-            res = subprocess.run(["launchctl", "list"], capture_output=True, text=True, check=False)
-            is_running = LAUNCH_AGENT_LABEL in res.stdout
+        is_installed, is_running = get_launch_agent_status()
 
         status_str = "🟢 Active (Running on macOS Startup)" if is_running else ("🟡 Installed (Idle)" if is_installed else "🔴 Not Installed")
 

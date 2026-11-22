@@ -34,6 +34,8 @@ APP_SIGNATURES = [
     (r"(?i)\b(google chrome|chrome)\b", "Google Chrome"),
     (r"(?i)\b(apple maps|maps)\b", "Apple Maps"),
     (r"(?i)\b(safari)\b", "Safari"),
+    (r"(?i)\b(spotify)\b", "Spotify"),
+    (r"(?i)\b(photos)\b", "Photos"),
     (r"(?i)\b(slack)\b", "Slack"),
     (r"(?i)\b(zoom\.us|zoom)\b", "Zoom"),
     (r"(?i)\b(figma)\b", "Figma"),
@@ -61,6 +63,19 @@ class CaptureClassifier:
             if re.search(pattern, text):
                 inferred_app = app_name
                 break
+
+        month_year = re.search(
+            r"\b(?:January|February|March|April|May|June|July|August|"
+            r"September|October|November|December)\s+\d{4}\b",
+            text,
+            re.I,
+        )
+        weekday_count = sum(
+            1 for day in ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+            if re.search(rf"(?m)^\s*{day}\s*$", text, re.I)
+        )
+        if month_year and weekday_count >= 5:
+            inferred_app = "Calendar"
 
         # 2. Score Categories
         code_score = sum(1 for kw in CODE_KEYWORDS if kw in text_lower)

@@ -7,6 +7,7 @@ privacy redactor, video processing, and indexing pipeline.
 import os
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
 import numpy as np
 import cv2
 from PIL import Image, ImageDraw, ImageFont
@@ -15,9 +16,25 @@ from core.database import SearchDatabase
 from core.classifier import CaptureClassifier
 from core.redactor import PrivacyRedactor
 from core.video import VideoProcessor
-from core.indexer import IndexerPipeline
+from core.indexer import IndexerPipeline, is_generic_capture_name
 from core.ocr import get_ocr_engine
 from core.namer import SmartNamer
+from core.summariser import FrameSummariser
+from core.auto_renamer import SilentCaptureHandler
+
+
+class StubOCR:
+    """Deterministic OCR for pipeline tests; native Vision has its own smoke test."""
+
+    def __init__(self, text):
+        self.text = text
+
+    def recognize_image(self, _image):
+        return self.text, [{
+            "text": self.text,
+            "confidence": 1.0,
+            "box": [0.15, 0.2, 0.7, 0.08],
+        }]
 
 
 class TestScreenrecordManager(unittest.TestCase):
@@ -27,6 +44,7 @@ class TestScreenrecordManager(unittest.TestCase):
         self.db = SearchDatabase(db_path=self.db_path)
 
     def tearDown(self):
+        self.db.conn.close()
         self.temp_dir.cleanup()
 
     def test_database_insert_and_fts5_search(self):
@@ -91,6 +109,18 @@ class TestScreenrecordManager(unittest.TestCase):
         self.assertEqual(cat_meet, "Meeting & Chat")
         self.assertEqual(app_meet, "Zoom")
 
+        spotify_text = "Spotify Your Library Playlists Daily Mix"
+        _, spotify_app = CaptureClassifier.classify_text(spotify_text)
+        self.assertEqual(spotify_app, "Spotify")
+
+        calendar_text = "November 2026\nSun\nMon\nTue\nWed\nThu\nFri\nSat"
+        _, calendar_app = CaptureClassifier.classify_text(calendar_text)
+        self.assertEqual(calendar_app, "Calendar")
+
+        photos_text = "Photos\nLibrary\nAll Photos\n26-30 Mar 2025"
+        _, photos_app = CaptureClassifier.classify_text(photos_text)
+        self.assertEqual(photos_app, "Photos")
+
     def test_privacy_redactor(self):
         """Test detection and blurring of API keys, tokens, emails."""
         secret_text = "Connecting with API Key: sk-proj1234567890abcdefghijklmn and contact support@company.com"
@@ -121,6 +151,8 @@ class TestScreenrecordManager(unittest.TestCase):
 
         ocr = get_ocr_engine()
         text, boxes = ocr.recognize_image(img)
+        if not text or not boxes:
+            self.skipTest("Apple Vision OCR is unavailable in this execution environment")
         # Verify text was recognized by Apple Vision
         self.assertTrue(any("ANTIGRAVITY" in t or "OCR" in t or "TEST" in t for t in text.split()))
         self.assertGreater(len(boxes), 0)
@@ -146,6 +178,7 @@ class TestScreenrecordManager(unittest.TestCase):
 
         # Run Indexing Pipeline
         pipeline = IndexerPipeline(db=self.db)
+        pipeline.ocr_engine = StubOCR("ErrorCode 404 Not Found")
         rec_id = pipeline.index_file(video_path)
         self.assertIsNotNone(rec_id)
 
@@ -188,6 +221,32 @@ class TestScreenrecordManager(unittest.TestCase):
         self.assertFalse(os.path.exists(dummy_file))
         self.assertIn("TypeError", os.path.basename(new_path))
 
+    def test_frame_summariser_uses_cross_frame_salience(self):
+        events = [
+            {"ocr_text": "Sunrise Planner Daily Goal Tracker"},
+            {"ocr_text": "Sunrise Planner Daily Goal Tracker"},
+            {"ocr_text": "Sunrise Planner Calendar Daily Goal Tracker"},
+        ]
+        summary = FrameSummariser.summarise(
+            events,
+            exclude_words={"sunrise", "planner"},
+        )
+        self.assertEqual(summary, "Daily Goal Tracker")
+
+    def test_frame_summariser_does_not_join_unrelated_ocr_boxes(self):
+        boxes = [
+            {"text": "XLOOKUP in"},
+            {"text": "EXPLORER"},
+            {"text": "SCREENRECORD MANAGER"},
+            {"text": "Review app-to-backend"},
+            {"text": "• Ran ./.venv/bin/python daemon.py status"},
+        ]
+        events = [{"bounding_boxes": boxes} for _ in range(4)]
+
+        summary = FrameSummariser.summarise(events)
+
+        self.assertEqual(summary, "Review App-To-Backend")
+
     def test_automatic_finder_renaming_flow(self):
         """Simulate real macOS screen recording landing in Finder and getting auto-renamed."""
         # 1. Create a file with generic macOS screen recording name
@@ -207,6 +266,9 @@ class TestScreenrecordManager(unittest.TestCase):
 
         # 2. Pipeline runs with auto_rename=True (as the background daemon does)
         pipeline = IndexerPipeline(db=self.db, auto_rename=True)
+        pipeline.ocr_engine = StubOCR(
+            "VS Code - server.py\nSyntaxError: unexpected EOF while parsing"
+        )
         rec_id = pipeline.index_file(rec_path)
         self.assertIsNotNone(rec_id)
 
@@ -218,6 +280,263 @@ class TestScreenrecordManager(unittest.TestCase):
         new_path = record["file_path"]
         self.assertTrue(os.path.exists(new_path))
         self.assertIn("SyntaxError", record["file_name"])
+
+    def test_screenshot_prefix_is_renamed(self):
+        """Modern macOS uses `Screenshot`, which must match the daemon contract."""
+        screenshot_path = os.path.join(
+            self.temp_dir.name, "Screenshot 2026-11-21 at 19.18.05.png"
+        )
+        Image.new("RGB", (800, 500), color="white").save(screenshot_path)
+
+        self.assertTrue(is_generic_capture_name(screenshot_path))
+        pipeline = IndexerPipeline(db=self.db, auto_rename=True)
+        pipeline.ocr_engine = StubOCR("Quarterly Product Roadmap")
+        record_id = pipeline.index_file(screenshot_path)
+
+        record = self.db.get_record(record_id)
+        self.assertFalse(os.path.exists(screenshot_path))
+        self.assertTrue(os.path.exists(record["file_path"]))
+        self.assertNotEqual(record["file_name"], os.path.basename(screenshot_path))
+
+    def test_daemon_deduplicates_unchanged_files(self):
+        capture_path = os.path.join(
+            self.temp_dir.name, "Screenshot 2026-11-21 at 19.18.05.png"
+        )
+        Image.new("RGB", (100, 100), color="white").save(capture_path)
+        handler = SilentCaptureHandler(Mock())
+        handler._wait_and_rename = Mock()
+
+        handler._process_file(capture_path)
+        handler._process_file(capture_path)
+
+        handler._wait_and_rename.assert_called_once_with(capture_path, app_hint=None)
+
+    def test_daemon_handles_atomic_move_events(self):
+        capture_path = os.path.join(
+            self.temp_dir.name, "Screenshot 2026-11-21 at 19.18.05.png"
+        )
+        Image.new("RGB", (100, 100), color="white").save(capture_path)
+        handler = SilentCaptureHandler(Mock())
+        handler._wait_and_rename = Mock()
+        event = Mock(is_directory=False, dest_path=capture_path)
+
+        with patch("core.auto_renamer.get_frontmost_application", return_value=None):
+            handler.on_moved(event)
+
+        handler._wait_and_rename.assert_called_once_with(capture_path, app_hint=None)
+
+    def test_smart_namer_prefers_majority_frame_context(self):
+        events = [{
+            "ocr_text": "One Time Setup Dialog",
+            "bounding_boxes": [{
+                "text": "One Time Setup Dialog",
+                "box": [0.2, 0.2, 0.6, 0.08],
+            }],
+        }]
+        events.extend({
+            "ocr_text": "Quarterly Revenue Review",
+            "bounding_boxes": [{
+                "text": "Quarterly Revenue Review",
+                "box": [0.2, 0.2, 0.6, 0.05],
+            }],
+        } for _ in range(3))
+
+        title = SmartNamer.generate_title(
+            [event["ocr_text"] for event in events],
+            app_name="Keynote",
+            category="Slides & Presentation",
+            original_path="Screen Recording 2026-11-21.mov",
+            events=events,
+        )
+
+        self.assertIn("Quarterly Revenue Review", title)
+        self.assertNotIn("One Time Setup", title)
+
+    def test_smart_namer_detects_fullscreen_spotify(self):
+        text = (
+            "Your Library\nPlaylists\nWhat do you want to play?\n"
+            "Christmas Playlists\nSpotify\nDaily Mix"
+        )
+        events = [{"bounding_boxes": [
+            {"text": "What do you want to play?", "box": [0.39, 0.064, 0.13, 0.018]},
+            {"text": "Christmas Playlists", "box": [0.32, 0.15, 0.09, 0.018]},
+            {"text": "Spotify", "box": [0.59, 0.21, 0.04, 0.02]},
+        ]}]
+
+        title = SmartNamer.generate_title(
+            [text],
+            app_name="macOS",
+            category="Doc & Web",
+            original_path="Screenshot 2026-11-21.png",
+            events=events,
+        )
+
+        self.assertEqual(title, "Spotify - Your Library (2026-11-21)")
+
+    def test_smart_namer_prefers_calendar_month_over_event(self):
+        text = (
+            "November 2026\nSun\nMon\nTue\nWed\nThu\nFri\nSat\n"
+            "Diwali (Deepawali)\nGuru Nanak Gurpurab"
+        )
+        events = [{"bounding_boxes": [
+            {"text": "November 2026", "box": [0.01, 0.09, 0.16, 0.031]},
+            {"text": "Guru Nanak Gurpurab", "box": [0.29, 0.62, 0.11, 0.018]},
+        ]}]
+
+        title = SmartNamer.generate_title(
+            [text],
+            app_name="macOS",
+            category="Doc & Web",
+            original_path="Screenshot 2026-11-21.png",
+            events=events,
+        )
+
+        self.assertEqual(title, "Calendar - November 2026 (2026-11-21)")
+
+    def test_screenshot_uses_app_then_largest_content_heading(self):
+        text = "Chrome\nProducts\nQuarterly Revenue Dashboard\nSettings"
+        events = [{"bounding_boxes": [
+            {"text": "Chrome", "box": [0.03, 0.01, 0.04, 0.014]},
+            {"text": "Products", "box": [0.03, 0.2, 0.06, 0.014]},
+            {
+                "text": "Quarterly Revenue Dashboard",
+                "box": [0.25, 0.22, 0.5, 0.06],
+            },
+            {"text": "Settings", "box": [0.85, 0.05, 0.06, 0.014]},
+        ]}]
+
+        title = SmartNamer.generate_title(
+            [text],
+            app_name="macOS",
+            category="Doc & Web",
+            original_path="Screenshot 2026-11-21.png",
+            events=events,
+        )
+
+        self.assertEqual(
+            title,
+            "Google Chrome - Quarterly Revenue Dashboard (2026-11-21)",
+        )
+
+    def test_screenshot_uses_frontmost_app_hint_when_ocr_has_no_app(self):
+        screenshot_path = os.path.join(self.temp_dir.name, "Screenshot 2026-11-21.png")
+        Image.new("RGB", (800, 500), color="white").save(screenshot_path)
+        pipeline = IndexerPipeline(db=self.db, auto_rename=True)
+        pipeline.ocr_engine = StubOCR("Project Timeline")
+
+        record_id = pipeline.index_file(screenshot_path, app_hint="Preview")
+        record = self.db.get_record(record_id)
+
+        self.assertEqual(record["app_name"], "Preview")
+        self.assertIn("Preview", record["file_name"])
+
+    def test_screenshot_frontmost_app_hint_beats_body_keyword_match(self):
+        screenshot_path = os.path.join(self.temp_dir.name, "Screenshot 2026-11-22.png")
+        Image.new("RGB", (800, 500), color="white").save(screenshot_path)
+        pipeline = IndexerPipeline(db=self.db, auto_rename=True)
+        pipeline.ocr_engine = StubOCR("Comparing GitHub and Chrome workflows")
+
+        record_id = pipeline.index_file(screenshot_path, app_hint="Brave Browser")
+        record = self.db.get_record(record_id)
+
+        self.assertEqual(record["app_name"], "Brave Browser")
+        self.assertTrue(record["file_name"].startswith("Brave Browser - "))
+
+    def test_screenshot_ignores_dock_temperature_and_picks_next_biggest_heading(self):
+        events = [{"bounding_boxes": [
+            {"text": "Brave", "box": [0.025, 0.01, 0.04, 0.014]},
+            {"text": "22 0C", "box": [0.283, 0.936, 0.096, 0.045]},
+            {"text": "+ Create", "box": [0.842, 0.161, 0.049, 0.0225]},
+            {"text": "System Design Architecture", "box": [0.20, 0.14, 0.45, 0.036]},
+            {"text": "Smaller Center Card", "box": [0.42, 0.48, 0.16, 0.020]},
+        ]}]
+
+        title = SmartNamer.generate_title(
+            ["Brave\n22 0C\n+ Create\nSystem Design Architecture\nSmaller Center Card"],
+            app_name="macOS",
+            category="Doc & Web",
+            original_path="Screenshot 2026-11-22.png",
+            events=events,
+        )
+
+        self.assertEqual(title, "Brave Browser - System Design Architecture (2026-11-22)")
+
+    def test_browser_home_screen_uses_site_name_over_thumbnail_text(self):
+        events = [{"bounding_boxes": [
+            {"text": "Brave", "box": [0.036, 0.013, 0.026, 0.0134]},
+            {"text": "youtube.com", "box": [0.195, 0.096, 0.060, 0.0134]},
+            {"text": "RAMANY", "box": [0.458, 0.380, 0.061, 0.0357]},
+            {"text": "Bachelorette", "box": [0.722, 0.451, 0.190, 0.0424]},
+        ]}]
+
+        title = SmartNamer.generate_title(
+            ["Brave\nyoutube.com\nRAMANY\nBachelorette"],
+            app_name="macOS",
+            category="Doc & Web",
+            original_path="Screenshot 2026-11-22.png",
+            events=events,
+        )
+
+        self.assertEqual(title, "Brave Browser - YouTube (2026-11-22)")
+
+    def test_youtube_watch_page_ignores_right_sidebar_thumbnails(self):
+        events = [{"bounding_boxes": [
+            {"text": "Brave", "box": [0.036, 0.013, 0.026, 0.0134]},
+            {"text": "youtube.com/watch?v=wXz8AzOxGSM", "box": [0.202, 0.094, 0.176, 0.0156]},
+            {"text": "New Bangkok Vlog", "box": [0.717, 0.710, 0.112, 0.0403]},
+            {"text": "Bachelorette with My Girls in Phuket | Ahaana Krishna", "box": [0.010, 0.810, 0.330, 0.0225]},
+        ]}]
+
+        title = SmartNamer.generate_title(
+            ["Brave\nyoutube.com/watch?v=wXz8AzOxGSM\nNew Bangkok Vlog\nBachelorette with My Girls in Phuket | Ahaana Krishna"],
+            app_name="macOS",
+            category="Doc & Web",
+            original_path="Screenshot 2026-11-22.png",
+            events=events,
+        )
+
+        self.assertTrue(title.startswith("Brave Browser - Bachelorette with My Girls in Phuket"))
+        self.assertNotIn("New Bangkok Vlog", title)
+
+    def test_recording_uses_app_and_largest_visible_heading(self):
+        events = [
+            {"bounding_boxes": [
+                {"text": "Brave", "box": [0.036, 0.013, 0.026, 0.0134]},
+                {"text": "API Migration Guide", "box": [0.22, 0.18, 0.40, 0.045]},
+                {"text": "Hello Class Data", "box": [0.22, 0.45, 0.30, 0.018]},
+            ]}
+            for _ in range(3)
+        ]
+
+        title = SmartNamer.generate_title(
+            ["Brave\nAPI Migration Guide\nHello Class Data"] * 3,
+            app_name="macOS",
+            category="Doc & Web",
+            original_path="Screen Recording 2026-11-22.mov",
+            events=events,
+        )
+
+        self.assertEqual(title, "Brave Browser - API Migration Guide (2026-11-22)")
+
+    def test_spotlight_comment_written_for_finder_search(self):
+        from core.indexer import write_spotlight_comment
+        import plistlib
+        import subprocess
+
+        sample_file = os.path.join(self.temp_dir.name, "sample_video.mov")
+        with open(sample_file, "wb") as f:
+            f.write(b"dummy")
+
+        ok = write_spotlight_comment(sample_file, ["Marissa 29/08/26", "kadalai Marissa"])
+        self.assertTrue(ok)
+
+        out = subprocess.run(
+            ["xattr", "-px", "com.apple.metadata:kMDItemFinderComment", sample_file],
+            capture_output=True, text=True, check=True,
+        )
+        comment = plistlib.loads(bytes.fromhex(out.stdout.replace(" ", "").replace("\n", "")))
+        self.assertIn("Marissa", comment)
+        self.assertIn("kadalai", comment)
 
 
     def test_chrome_active_tab_detection(self):
