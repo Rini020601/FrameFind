@@ -538,6 +538,113 @@ class TestScreenrecordManager(unittest.TestCase):
         self.assertIn("Marissa", comment)
         self.assertIn("kadalai", comment)
 
+    def test_database_wal_and_cascade_delete_no_orphans(self):
+        mode = self.db.conn.execute("PRAGMA journal_mode;").fetchone()[0].lower()
+        fk = self.db.conn.execute("PRAGMA foreign_keys;").fetchone()[0]
+        self.assertEqual(mode, "wal")
+        self.assertEqual(fk, 1)
+
+        rec_id = self.db.insert_or_update_record({
+            "file_path": "/fake/cascade_test.mov",
+            "file_name": "cascade_test.mov",
+            "file_type": "video",
+        })
+        self.db.insert_event({
+            "record_id": rec_id,
+            "timestamp_sec": 1.0,
+            "ocr_text": "CascadeCheckToken",
+        })
+        self.db.delete_record(rec_id)
+        remaining = self.db.conn.execute("SELECT COUNT(*) FROM events WHERE record_id = ?", (rec_id,)).fetchone()[0]
+        self.assertEqual(remaining, 0)
+
+    def test_rename_recording_file_never_creates_hidden_empty_name(self):
+        src = os.path.join(self.temp_dir.name, "Screenshot 2026-11-24.png")
+        with open(src, "wb") as f:
+            f.write(b"png")
+        renamed = SmartNamer.rename_recording_file(src, '///:::***')
+        self.assertEqual(os.path.basename(renamed), "Capture.png")
+        self.assertTrue(os.path.exists(renamed))
+
+    def test_single_instance_daemon_lock(self):
+        from core.auto_renamer import acquire_daemon_lock
+        lock_path = os.path.join(self.temp_dir.name, "test_daemon.lock")
+        first = acquire_daemon_lock(lock_path)
+        self.assertIsNotNone(first)
+        second = acquire_daemon_lock(lock_path)
+        self.assertIsNone(second)
+        first.close()
+        third = acquire_daemon_lock(lock_path)
+        self.assertIsNotNone(third)
+        third.close()
+
+    def test_audio_transcript_alignment_and_batch_fts5_search(self):
+        from core.audio import AudioTranscriber
+        rec_id = self.db.insert_or_update_record({
+            "file_path": "/fake/meeting_demo.mov",
+            "file_name": "meeting_demo.mov",
+            "file_type": "video",
+        })
+        events = [
+            {"record_id": rec_id, "timestamp_sec": 2.0, "ocr_text": "Slide One", "audio_text": "", "bounding_boxes": []},
+            {"record_id": rec_id, "timestamp_sec": 12.0, "ocr_text": "Slide Two", "audio_text": "", "bounding_boxes": []},
+        ]
+        segments = [
+            {"start": 2.5, "end": 4.0, "text": "quarterly kubernetes rollout"},
+            {"start": 25.0, "end": 27.0, "text": "standalone spoken remark"},
+        ]
+        aligned = AudioTranscriber.align_transcript_to_events(segments, events, record_id=rec_id)
+        count = self.db.insert_events_batch(aligned)
+        self.assertEqual(count, 3)
+
+        hits = self.db.search("kubernetes")
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0]["timestamp_sec"], 2.0)
+
+        hits2 = self.db.search("standalone")
+        self.assertEqual(len(hits2), 1)
+        self.assertEqual(hits2[0]["timestamp_sec"], 25.0)
+
+    def test_cleanup_orphans_removes_missing_records_and_unreferenced_thumbs(self):
+        existing_file = os.path.join(self.temp_dir.name, "keep.png")
+        with open(existing_file, "wb") as f:
+            f.write(b"ok")
+        thumb_dir = os.path.join(self.temp_dir.name, "thumbs")
+        os.makedirs(thumb_dir, exist_ok=True)
+        keep_thumb = os.path.join(thumb_dir, "keep.jpg")
+        orphan_thumb = os.path.join(thumb_dir, "orphan.jpg")
+        for p in (keep_thumb, orphan_thumb):
+            with open(p, "wb") as f:
+                f.write(b"jpg")
+
+        keep_id = self.db.insert_or_update_record({
+            "file_path": existing_file,
+            "file_name": "keep.png",
+            "file_type": "screenshot",
+            "thumbnail_path": keep_thumb,
+        })
+        self.db.insert_or_update_record({
+            "file_path": os.path.join(self.temp_dir.name, "deleted.mov"),
+            "file_name": "deleted.mov",
+            "file_type": "video",
+        })
+
+        result = self.db.cleanup_orphans(thumbnail_dir=thumb_dir)
+        self.assertEqual(result["removed_records"], 1)
+        self.assertEqual(result["removed_thumbnails"], 1)
+        self.assertIsNotNone(self.db.get_record(keep_id))
+        self.assertTrue(os.path.exists(keep_thumb))
+        self.assertFalse(os.path.exists(orphan_thumb))
+
+    def test_find_matching_boxes_for_highlight_overlay(self):
+        from gui.player_widget import find_matching_boxes
+        boxes = [
+            {"text": "TypeError: invalid token", "box": [0.1, 0.2, 0.5, 0.04]},
+            {"text": "Footer copyright", "box": [0.1, 0.9, 0.3, 0.02]},
+        ]
+        matched = find_matching_boxes(boxes, "TypeError")
+        self.assertEqual(matched, [[0.1, 0.2, 0.5, 0.04]])
+
 
     def test_chrome_active_tab_detection(self):
         """

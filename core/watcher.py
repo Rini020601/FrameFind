@@ -6,14 +6,15 @@ Debounces file writes until macOS finishes saving the file.
 
 import os
 import time
+import threading
 import logging
 from typing import Callable, List, Optional
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileModifiedEvent
+from watchdog.events import FileSystemEventHandler
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_EXTS = {".mov", ".mp4", ".m4v", ".png", ".jpg"}
+SUPPORTED_EXTS = {".mov", ".mp4", ".m4v", ".png", ".jpg", ".jpeg"}
 
 
 class ScreenrecordFileHandler(FileSystemEventHandler):
@@ -21,7 +22,9 @@ class ScreenrecordFileHandler(FileSystemEventHandler):
         super().__init__()
         self.on_file_ready = on_file_ready
         self.debounce_sec = debounce_sec
-        self._pending_files = {}
+        self._processing = set()
+        self._processed_signatures = {}
+        self._lock = threading.Lock()
 
     def on_created(self, event):
         if not event.is_directory:
@@ -31,6 +34,15 @@ class ScreenrecordFileHandler(FileSystemEventHandler):
         if not event.is_directory:
             self._handle_file(event.src_path)
 
+    def on_moved(self, event):
+        if not event.is_directory:
+            self._handle_file(event.dest_path)
+
+    @staticmethod
+    def _file_signature(path: str):
+        st = os.stat(path)
+        return st.st_size, st.st_mtime_ns
+
     def _handle_file(self, path: str):
         filename = os.path.basename(path)
         # Skip temporary, hidden, or partial files
@@ -38,8 +50,32 @@ class ScreenrecordFileHandler(FileSystemEventHandler):
             return
 
         ext = os.path.splitext(filename)[1].lower()
-        if ext in SUPPORTED_EXTS:
+        if ext not in SUPPORTED_EXTS:
+            return
+
+        with self._lock:
+            if path in self._processing:
+                return
+            try:
+                sig = self._file_signature(path)
+            except OSError:
+                return
+            if self._processed_signatures.get(path) == sig:
+                return
+            self._processing.add(path)
+
+        try:
             self._wait_until_stable_and_process(path)
+        finally:
+            with self._lock:
+                self._processing.discard(path)
+                if os.path.exists(path):
+                    try:
+                        if len(self._processed_signatures) >= 500:
+                            self._processed_signatures.clear()
+                        self._processed_signatures[path] = self._file_signature(path)
+                    except OSError:
+                        pass
 
     def _wait_until_stable_and_process(self, path: str):
         """Poll until file size stops changing (macOS finished recording/exporting)."""

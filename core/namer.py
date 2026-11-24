@@ -580,7 +580,7 @@ class SmartNamer:
         parent_dir = os.path.dirname(old_path)
         ext = os.path.splitext(old_path)[1]
 
-        safe_title = cls.sanitize_filename(new_title)
+        safe_title = cls.sanitize_filename(new_title) or "Capture"
         new_name = f"{safe_title}{ext}"
         new_path = os.path.join(parent_dir, new_name)
 

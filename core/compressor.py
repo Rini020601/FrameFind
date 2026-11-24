@@ -41,32 +41,45 @@ class VideoCompressor:
             output_path = f"{base_name}_compressed.mp4"
 
         start_time = time.time()
+        tmp_output = f"{output_path}.tmp.mp4"
 
-        if cls.is_ffmpeg_available():
-            # Apple VideoToolbox hardware accelerated compression
-            cmd = [
-                "ffmpeg", "-y", "-i", input_path,
-                "-c:v", "h264_videotoolbox",
-                "-b:v", f"{target_bitrate_kbps}k",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac", "-b:a", "128k",
-                output_path
-            ]
-            try:
-                subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            except subprocess.CalledProcessError:
-                # Fallback to libx264 if videotoolbox fails
-                cmd_fallback = [
+        try:
+            if cls.is_ffmpeg_available():
+                # Apple VideoToolbox hardware accelerated compression
+                cmd = [
                     "ffmpeg", "-y", "-i", input_path,
-                    "-c:v", "libx264", "-crf", str(crf),
-                    "-preset", "faster",
+                    "-c:v", "h264_videotoolbox",
+                    "-b:v", f"{target_bitrate_kbps}k",
+                    "-pix_fmt", "yuv420p",
                     "-c:a", "aac", "-b:a", "128k",
-                    output_path
+                    tmp_output
                 ]
-                subprocess.run(cmd_fallback, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        else:
-            # OpenCV Fallback re-encoder
-            cls._opencv_compress(input_path, output_path)
+                try:
+                    subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                except subprocess.CalledProcessError:
+                    # Fallback to libx264 if videotoolbox fails
+                    cmd_fallback = [
+                        "ffmpeg", "-y", "-i", input_path,
+                        "-c:v", "libx264", "-crf", str(crf),
+                        "-preset", "faster",
+                        "-c:a", "aac", "-b:a", "128k",
+                        tmp_output
+                    ]
+                    subprocess.run(cmd_fallback, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            else:
+                # OpenCV Fallback re-encoder
+                cls._opencv_compress(input_path, tmp_output)
+
+            if not os.path.exists(tmp_output) or os.path.getsize(tmp_output) == 0:
+                raise RuntimeError(f"Compression produced an empty output file: {output_path}")
+            os.replace(tmp_output, output_path)
+        except Exception:
+            if os.path.exists(tmp_output):
+                try:
+                    os.unlink(tmp_output)
+                except OSError:
+                    pass
+            raise
 
         elapsed = round(time.time() - start_time, 2)
         compressed_size = os.path.getsize(output_path) if os.path.exists(output_path) else orig_size
@@ -90,31 +103,36 @@ class VideoCompressor:
         if not cap.isOpened():
             raise ValueError(f"Cannot open video for compression: {input_path}")
 
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        out = None
+        try:
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        # Downscale 4K/Retina recordings to 1080p for massive size savings if width > 1920
-        if w > 1920:
-            scale = 1920.0 / w
-            out_w = 1920
-            out_h = int(h * scale)
-            # Ensure even dimensions
-            out_w = out_w if out_w % 2 == 0 else out_w - 1
-            out_h = out_h if out_h % 2 == 0 else out_h - 1
-        else:
-            out_w, out_h = w, h
+            # Downscale 4K/Retina recordings to 1080p for massive size savings if width > 1920
+            if w > 1920:
+                scale = 1920.0 / w
+                out_w = 1920
+                out_h = int(h * scale)
+                # Ensure even dimensions
+                out_w = out_w if out_w % 2 == 0 else out_w - 1
+                out_h = out_h if out_h % 2 == 0 else out_h - 1
+            else:
+                out_w, out_h = w, h
 
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(output_path, fourcc, fps, (out_w, out_h))
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output_path, fourcc, fps, (out_w, out_h))
+            if not out.isOpened():
+                raise RuntimeError(f"Could not open VideoWriter for: {output_path}")
 
-        while True:
-            ret, frame = cap.read()
-            if not ret or frame is None:
-                break
-            if (out_w, out_h) != (w, h):
-                frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_AREA)
-            out.write(frame)
-
-        cap.release()
-        out.release()
+            while True:
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    break
+                if (out_w, out_h) != (w, h):
+                    frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_AREA)
+                out.write(frame)
+        finally:
+            cap.release()
+            if out is not None:
+                out.release()

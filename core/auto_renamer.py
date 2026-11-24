@@ -12,14 +12,16 @@ When a new generic recording or screenshot is saved, it automatically:
 
 import os
 import time
+import fcntl
 import threading
 import subprocess
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional, Callable
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-from .database import SearchDatabase
+from .database import SearchDatabase, DEFAULT_DB_DIR
 from .indexer import IndexerPipeline, GENERIC_CAPTURE_PREFIXES
 from .logging_setup import setup_logging
 from .namer import SmartNamer
@@ -27,6 +29,21 @@ from .namer import SmartNamer
 logger = logging.getLogger("AutoRenamer")
 
 SUPPORTED_EXTS = (".mov", ".mp4", ".m4v", ".png", ".jpg", ".jpeg")
+DEFAULT_LOCK_PATH = os.path.join(DEFAULT_DB_DIR, "daemon.lock")
+
+
+def acquire_daemon_lock(lock_path: str = DEFAULT_LOCK_PATH):
+    """Acquire a non-blocking exclusive lockfile to guarantee a single daemon instance."""
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    lock_file = open(lock_path, "w", encoding="utf-8")
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lock_file.write(f"{os.getpid()}\n")
+        lock_file.flush()
+        return lock_file
+    except BlockingIOError:
+        lock_file.close()
+        return None
 
 
 def get_frontmost_application() -> Optional[str]:
@@ -72,13 +89,28 @@ def send_macos_notification(title: str, message: str):
 
 
 class SilentCaptureHandler(FileSystemEventHandler):
-    def __init__(self, pipeline: IndexerPipeline, on_renamed: Optional[Callable[[str, str], None]] = None):
+    def __init__(
+        self,
+        pipeline: IndexerPipeline,
+        on_renamed: Optional[Callable[[str, str], None]] = None,
+        max_workers: int = 0,
+    ):
         super().__init__()
         self.pipeline = pipeline
         self.on_renamed = on_renamed
         self._processing = set()
         self._processed_signatures = {}
         self._lock = threading.Lock()
+        self._executor = (
+            ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="capture-worker")
+            if max_workers > 0
+            else None
+        )
+
+    def shutdown(self):
+        if self._executor is not None:
+            self._executor.shutdown(wait=False)
+            self._executor = None
 
     def on_created(self, event):
         if not event.is_directory:
@@ -139,18 +171,27 @@ class SilentCaptureHandler(FileSystemEventHandler):
             if self._processed_signatures.get(file_path) == signature:
                 return
             self._processing.add(file_path)
+        if self._executor is not None:
+            self._executor.submit(self._run_capture_job, file_path, app_hint)
+        else:
+            self._run_capture_job(file_path, app_hint)
+
+    def _run_capture_job(self, file_path: str, app_hint: Optional[str] = None):
         try:
             self._wait_and_rename(file_path, app_hint=app_hint)
         except Exception:
             # A malformed capture must not terminate watchdog's dispatch thread.
             logger.exception("Unexpected failure while processing %s", file_path)
         finally:
-            self._processing.discard(file_path)
-            if os.path.exists(file_path):
-                try:
-                    self._processed_signatures[file_path] = self._file_signature(file_path)
-                except OSError:
-                    pass
+            with self._lock:
+                self._processing.discard(file_path)
+                if os.path.exists(file_path):
+                    try:
+                        if len(self._processed_signatures) >= 500:
+                            self._processed_signatures.clear()
+                        self._processed_signatures[file_path] = self._file_signature(file_path)
+                    except OSError:
+                        pass
 
     def _wait_and_rename(self, file_path: str, app_hint: Optional[str] = None):
         logger.info(f"Detected new macOS capture: {os.path.basename(file_path)}")
@@ -260,21 +301,29 @@ class ScreenrecordDaemon:
                 self.watch_dirs.append(d_norm)
 
         self.observer = None
+        self.handler = None
+        self._lock_file = None
         self.is_running = False
 
-    def start(self, blocking: bool = True):
+    def start(self, blocking: bool = True, enforce_single_instance: bool = True):
         """Start monitoring for captures."""
+        if enforce_single_instance:
+            self._lock_file = acquire_daemon_lock()
+            if self._lock_file is None:
+                logger.warning("Another Screenrecord Auto-Renamer daemon is already running. Exiting duplicate instance.")
+                return
+
         self.observer = Observer()
-        handler = SilentCaptureHandler(self.pipeline)
+        self.handler = SilentCaptureHandler(self.pipeline, max_workers=2)
 
         for d in self.watch_dirs:
             logger.info(f"👀 Watching folder for macOS captures: {d}")
-            self.observer.schedule(handler, d, recursive=False)
+            self.observer.schedule(self.handler, d, recursive=False)
 
         self.observer.start()
         self.is_running = True
         logger.info("🚀 Screenrecord Auto-Renamer background service is active!")
-        handler.process_recent(self.watch_dirs)
+        self.handler.process_recent(self.watch_dirs)
 
         if blocking:
             try:
@@ -289,3 +338,13 @@ class ScreenrecordDaemon:
             self.observer.stop()
             self.observer.join()
             self.is_running = False
+        if self.handler is not None:
+            self.handler.shutdown()
+            self.handler = None
+        if self._lock_file is not None:
+            try:
+                fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_UN)
+                self._lock_file.close()
+            except OSError:
+                pass
+            self._lock_file = None

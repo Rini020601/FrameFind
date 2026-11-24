@@ -133,6 +133,15 @@ def cli_stats():
     print(f"  • Total Media Size:          {mb} MB")
 
 
+def cli_cleanup():
+    db = SearchDatabase()
+    result = db.cleanup_orphans()
+    print(
+        f"🧹 Cleanup complete: removed {result['removed_records']} orphan record(s) "
+        f"and {result['removed_thumbnails']} unreferenced thumbnail(s)."
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Screenrecord Manager — Intelligent OCR & Video Indexer")
     parser.add_argument("--gui", action="store_true", help="Launch the Desktop GUI")
@@ -162,6 +171,9 @@ def main():
     # stats command
     subparsers.add_parser("stats", help="Show library statistics")
 
+    # cleanup command
+    subparsers.add_parser("cleanup", help="Remove DB entries for deleted files and prune orphan thumbnails")
+
     args = parser.parse_args()
 
     if args.command == "index":
@@ -184,6 +196,8 @@ def main():
             status_launch_agent()
     elif args.command == "stats":
         cli_stats()
+    elif args.command == "cleanup":
+        cli_cleanup()
     else:
         # Default action: Launch Desktop GUI
         from gui.app import run_gui

@@ -16,6 +16,7 @@ from PIL import Image
 from .database import SearchDatabase
 from .video import VideoProcessor, THUMBNAIL_DIR
 from .ocr import get_ocr_engine
+from .audio import AudioTranscriber
 from .classifier import CaptureClassifier
 from .namer import SmartNamer
 
@@ -82,11 +83,18 @@ def write_spotlight_comment(file_path: str, ocr_texts: List[str], max_chars: int
 
 
 class IndexerPipeline:
-    def __init__(self, db: Optional[SearchDatabase] = None, auto_rename: bool = True):
+    def __init__(
+        self,
+        db: Optional[SearchDatabase] = None,
+        auto_rename: bool = True,
+        enable_audio_transcription: bool = True,
+    ):
         self.db = db or SearchDatabase()
         self.auto_rename = auto_rename
+        self.enable_audio_transcription = enable_audio_transcription
         self.video_processor = VideoProcessor(sample_interval_sec=2.0, scene_change_thresh=0.15)
         self.ocr_engine = get_ocr_engine()
+        self.audio_transcriber = AudioTranscriber()
 
     def index_file(
         self,
@@ -158,6 +166,7 @@ class IndexerPipeline:
         fps = meta["fps"] or 30.0
         all_detected_text = []
         collected_events = []
+        events_to_insert = []
         event_count = 0
 
         for frame_info in self.video_processor.extract_keyframes(file_path, record_id):
@@ -176,7 +185,7 @@ class IndexerPipeline:
                     "ocr_text": ocr_text,
                     "bounding_boxes": boxes
                 })
-                self.db.insert_event({
+                events_to_insert.append({
                     "record_id": record_id,
                     "timestamp_sec": timestamp_sec,
                     "frame_idx": frame_idx,
@@ -189,11 +198,23 @@ class IndexerPipeline:
                 event_count += 1
 
             # Update progress
-            pct = 0.15 + 0.80 * min(1.0, frame_idx / max(1, total_frames))
+            pct = 0.15 + 0.75 * min(1.0, frame_idx / max(1, total_frames))
             if progress_cb:
                 mins = int(timestamp_sec // 60)
                 secs = int(timestamp_sec % 60)
                 progress_cb(pct, f"Indexed at {mins:02d}:{secs:02d} ({event_count} events found)")
+
+        # Optional local speech transcription aligned to keyframe timestamps
+        all_audio_text = []
+        if self.enable_audio_transcription and self.audio_transcriber.is_available():
+            if progress_cb:
+                progress_cb(0.92, "Transcribing spoken audio locally...")
+            segments = self.audio_transcriber.transcribe_video(file_path)
+            if segments:
+                all_audio_text = [s["text"] for s in segments]
+                events_to_insert = AudioTranscriber.align_transcript_to_events(
+                    segments, events_to_insert, record_id=record_id
+                )
 
         # Auto-classify based on aggregated text
         combined_text = "\n".join(all_detected_text[:20])
@@ -201,10 +222,13 @@ class IndexerPipeline:
         if app_hint and app_hint not in ("macOS", "Unknown"):
             inferred_app = app_hint
 
-        with self.db.conn:
+        with self.db._lock, self.db.conn:
             self.db.conn.execute("""
                 UPDATE records SET category = ?, app_name = ? WHERE id = ?
             """, (category, inferred_app, record_id))
+
+        # Persist all events + FTS5 rows in a single atomic batch transaction
+        self.db.insert_events_batch(events_to_insert)
 
         # Content-based smart renaming
         if self.auto_rename and is_generic_capture_name(file_path):
@@ -220,7 +244,7 @@ class IndexerPipeline:
             except Exception as e:
                 logger.warning(f"Auto-rename failed: {e}")
 
-        write_spotlight_comment(file_path, all_detected_text)
+        write_spotlight_comment(file_path, all_detected_text + all_audio_text)
 
         if progress_cb:
             progress_cb(1.0, f"Done! Indexed {event_count} chapters ({category})")

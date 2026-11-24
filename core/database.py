@@ -6,6 +6,7 @@ SQLite FTS5 full-text search index for video keyframes and screenshots.
 import os
 import json
 import sqlite3
+import threading
 from typing import List, Dict, Any, Optional
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -20,8 +21,14 @@ class SearchDatabase:
     def __init__(self, db_path: str = DEFAULT_DB_PATH):
         self.db_path = db_path
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self._lock = threading.RLock()
+        self.conn = sqlite3.connect(self.db_path, timeout=5.0, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        with self._lock:
+            self.conn.execute("PRAGMA journal_mode=WAL;")
+            self.conn.execute("PRAGMA synchronous=NORMAL;")
+            self.conn.execute("PRAGMA foreign_keys=ON;")
+            self.conn.execute("PRAGMA busy_timeout=5000;")
         self._init_schema()
 
     def _init_schema(self):
@@ -79,7 +86,7 @@ class SearchDatabase:
 
     def insert_or_update_record(self, data: Dict[str, Any]) -> int:
         """Insert a new recording or screenshot metadata record, or return existing ID."""
-        with self.conn:
+        with self._lock, self.conn:
             cur = self.conn.execute(
                 "SELECT id FROM records WHERE file_path = ?", (data["file_path"],)
             )
@@ -131,7 +138,7 @@ class SearchDatabase:
         else:
             boxes_json = str(boxes)
 
-        with self.conn:
+        with self._lock, self.conn:
             cur = self.conn.execute("""
                 INSERT INTO events (
                     record_id, timestamp_sec, frame_idx, ocr_text,
@@ -169,6 +176,57 @@ class SearchDatabase:
             ))
 
             return event_id
+
+    def insert_events_batch(self, events_data: List[Dict[str, Any]]) -> int:
+        """Insert multiple timestamped events and sync FTS5 in a single transaction."""
+        if not events_data:
+            return 0
+
+        with self._lock, self.conn:
+            record_meta_cache: Dict[int, tuple] = {}
+            inserted = 0
+            for event_data in events_data:
+                record_id = event_data["record_id"]
+                if record_id not in record_meta_cache:
+                    r_row = self.conn.execute(
+                        "SELECT file_name, category FROM records WHERE id = ?", (record_id,)
+                    ).fetchone()
+                    record_meta_cache[record_id] = (
+                        (r_row["file_name"], r_row["category"]) if r_row else ("", "")
+                    )
+                file_name, category = record_meta_cache[record_id]
+
+                boxes = event_data.get("bounding_boxes", [])
+                boxes_json = json.dumps(boxes) if isinstance(boxes, (list, dict)) else str(boxes)
+
+                cur = self.conn.execute("""
+                    INSERT INTO events (
+                        record_id, timestamp_sec, frame_idx, ocr_text,
+                        audio_text, bounding_boxes, is_keyframe, frame_thumb_path
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    record_id,
+                    event_data.get("timestamp_sec", 0.0),
+                    event_data.get("frame_idx", 0),
+                    event_data.get("ocr_text", ""),
+                    event_data.get("audio_text", ""),
+                    boxes_json,
+                    event_data.get("is_keyframe", 1),
+                    event_data.get("frame_thumb_path", "")
+                ))
+                event_id = cur.lastrowid
+                self.conn.execute("""
+                    INSERT INTO events_fts(rowid, ocr_text, audio_text, file_name, category)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (
+                    event_id,
+                    event_data.get("ocr_text", ""),
+                    event_data.get("audio_text", ""),
+                    file_name,
+                    category
+                ))
+                inserted += 1
+            return inserted
 
     def search(self, query: str, file_type: Optional[str] = None, category: Optional[str] = None) -> List[Dict[str, Any]]:
         """
@@ -287,7 +345,7 @@ class SearchDatabase:
 
     def delete_record(self, record_id: int):
         """Delete a record and all associated events."""
-        with self.conn:
+        with self._lock, self.conn:
             self.conn.execute("""
                 DELETE FROM events_fts WHERE rowid IN (
                     SELECT id FROM events WHERE record_id = ?
@@ -297,7 +355,7 @@ class SearchDatabase:
 
     def update_record_file_path(self, record_id: int, new_path: str, new_name: str):
         """Update file path and name on disk and sync with FTS5."""
-        with self.conn:
+        with self._lock, self.conn:
             self.conn.execute("""
                 UPDATE records SET file_path = ?, file_name = ? WHERE id = ?
             """, (new_path, new_name, record_id))
@@ -307,6 +365,44 @@ class SearchDatabase:
                 UPDATE events_fts SET file_name = ?
                 WHERE rowid IN (SELECT id FROM events WHERE record_id = ?)
             """, (new_name, record_id))
+
+    def cleanup_orphans(self, thumbnail_dir: Optional[str] = None) -> Dict[str, int]:
+        """Remove DB records for deleted files and prune unreferenced thumbnails."""
+        removed_records = 0
+        removed_thumbnails = 0
+
+        with self._lock, self.conn:
+            rows = self.conn.execute("SELECT id, file_path FROM records").fetchall()
+            orphan_ids = [r["id"] for r in rows if r["file_path"] and not os.path.exists(r["file_path"])]
+            for rid in orphan_ids:
+                self.conn.execute(
+                    "DELETE FROM events_fts WHERE rowid IN (SELECT id FROM events WHERE record_id = ?)",
+                    (rid,),
+                )
+                self.conn.execute("DELETE FROM records WHERE id = ?", (rid,))
+                removed_records += 1
+
+            referenced_thumbs = set()
+            for r in self.conn.execute("SELECT thumbnail_path FROM records WHERE thumbnail_path != ''"):
+                referenced_thumbs.add(os.path.abspath(r["thumbnail_path"]))
+            for r in self.conn.execute("SELECT frame_thumb_path FROM events WHERE frame_thumb_path != ''"):
+                referenced_thumbs.add(os.path.abspath(r["frame_thumb_path"]))
+
+        thumb_root = thumbnail_dir or os.path.join(os.path.dirname(self.db_path), "thumbnails")
+        if os.path.isdir(thumb_root):
+            for entry in os.scandir(thumb_root):
+                if entry.is_file() and entry.name.lower().endswith((".jpg", ".jpeg", ".png")):
+                    if os.path.abspath(entry.path) not in referenced_thumbs:
+                        try:
+                            os.unlink(entry.path)
+                            removed_thumbnails += 1
+                        except OSError:
+                            pass
+
+        return {
+            "removed_records": removed_records,
+            "removed_thumbnails": removed_thumbnails,
+        }
 
     def get_stats(self) -> Dict[str, Any]:
         """Aggregate summary statistics for the portfolio dashboard."""

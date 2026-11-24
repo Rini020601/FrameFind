@@ -20,8 +20,9 @@ from core.indexer import IndexerPipeline
 from core.watcher import CaptureWatcher
 from gui.theme import DARK_THEME_QSS
 from gui.results_list import ResultsListWidget
-from gui.player_widget import VideoPlayerWidget
+from gui.player_widget import VideoPlayerWidget, find_matching_boxes
 from gui.chapters_widget import ChaptersInspectorWidget
+from gui.menubar import MenuBarTray
 
 
 class IndexWorker(QThread):
@@ -65,6 +66,7 @@ class MainWindow(QMainWindow):
 
         self._init_ui()
         self._init_watcher()
+        self._init_menubar()
         self._refresh_library()
 
     def _init_ui(self):
@@ -224,6 +226,38 @@ class MainWindow(QMainWindow):
         )
         self.watcher.start()
 
+    def _init_menubar(self):
+        """Attach lightweight macOS menu bar tray icon."""
+        self.menubar_tray = MenuBarTray(
+            parent=self,
+            db=self.db,
+            on_open_search=self._focus_search,
+            on_toggle_auto_rename=self._toggle_auto_rename_from_tray,
+            on_cleanup_orphans=self._run_orphan_cleanup,
+            get_auto_rename_state=lambda: self.auto_rename_enabled,
+        )
+
+    def _focus_search(self):
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        self.search_input.setFocus()
+        self.search_input.selectAll()
+
+    def _toggle_auto_rename_from_tray(self):
+        self.auto_rename_btn.setChecked(not self.auto_rename_enabled)
+        self._toggle_auto_rename()
+
+    def _run_orphan_cleanup(self):
+        result = self.db.cleanup_orphans()
+        self._refresh_library()
+        QMessageBox.information(
+            self,
+            "Orphan Cleanup Complete",
+            f"Removed {result['removed_records']} missing file record(s) and "
+            f"{result['removed_thumbnails']} unreferenced thumbnail(s).",
+        )
+
     def _on_watcher_file_detected(self, file_path: str):
         """Called by background watchdog thread when macOS writes a new recording."""
         QTimer.singleShot(0, lambda: self._start_indexing([file_path]))
@@ -244,6 +278,8 @@ class MainWindow(QMainWindow):
 
     def _refresh_library(self):
         self._execute_search()
+        if hasattr(self, "menubar_tray") and self.menubar_tray:
+            self.menubar_tray.refresh_menu()
 
     def _on_item_selected(self, item_data: dict):
         rec_id = item_data.get("record_id")
@@ -257,12 +293,17 @@ class MainWindow(QMainWindow):
         events = self.db.get_record_events(rec_id)
         is_video = (record.get("file_type") == "video")
         ts_sec = item_data.get("timestamp_sec", 0.0)
+        matching_boxes = find_matching_boxes(
+            item_data.get("bounding_boxes", []),
+            self.search_input.text(),
+        )
 
-        # Load into player and seek to hit timestamp
+        # Load into player, seek to hit timestamp, and highlight matched OCR boxes
         self.player_widget.load_media(
             file_path=record["file_path"],
             is_video=is_video,
-            jump_to_sec=ts_sec
+            jump_to_sec=ts_sec,
+            highlight_boxes=matching_boxes,
         )
 
         # Load chapters and OCR text into inspector
@@ -378,4 +419,6 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if hasattr(self, 'watcher') and self.watcher:
             self.watcher.stop()
+        if hasattr(self, 'menubar_tray') and self.menubar_tray:
+            self.menubar_tray.hide()
         event.accept()

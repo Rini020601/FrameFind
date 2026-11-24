@@ -33,13 +33,14 @@ class VideoProcessor:
         if not cap.isOpened():
             raise ValueError(f"Could not open video file: {file_path}")
 
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        duration_sec = frame_count / fps if fps > 0 else 0.0
-
-        cap.release()
+        try:
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            duration_sec = frame_count / fps if fps > 0 else 0.0
+        finally:
+            cap.release()
 
         file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
 
@@ -60,13 +61,14 @@ class VideoProcessor:
         if not cap.isOpened():
             return None
 
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        # Jump to 1 second in to avoid initial black/blank frames
-        target_frame = int(min(fps, cap.get(cv2.CAP_PROP_FRAME_COUNT) - 1))
-        cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
-
-        success, frame = cap.read()
-        cap.release()
+        try:
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            # Jump to 1 second in to avoid initial black/blank frames
+            target_frame = int(min(fps, max(0, cap.get(cv2.CAP_PROP_FRAME_COUNT) - 1)))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
+            success, frame = cap.read()
+        finally:
+            cap.release()
 
         if not success or frame is None:
             return None
@@ -98,61 +100,66 @@ class VideoProcessor:
         if not cap.isOpened():
             return
 
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        step_frames = max(1, int(fps * self.sample_interval_sec))
+        try:
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            step_frames = max(1, int(fps * self.sample_interval_sec))
 
-        prev_gray_small = None
-        frame_idx = 0
+            prev_gray_small = None
+            frame_idx = 0
 
-        while frame_idx < total_frames:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-            success, frame = cap.read()
-            if not success or frame is None:
-                break
+            while frame_idx < total_frames:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                success, frame = cap.read()
+                if not success or frame is None:
+                    break
 
-            timestamp_sec = round(frame_idx / fps, 2)
+                timestamp_sec = round(frame_idx / fps, 2)
 
-            # Scene change detection using downscaled grayscale image for speed
-            small = cv2.resize(frame, (160, 90), interpolation=cv2.INTER_AREA)
-            gray_small = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+                # Scene change detection using downscaled grayscale image for speed
+                small = cv2.resize(frame, (160, 90), interpolation=cv2.INTER_AREA)
+                gray_small = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
 
-            is_scene_change = False
-            if prev_gray_small is not None:
-                # Normalized absolute difference
-                diff = cv2.absdiff(gray_small, prev_gray_small)
-                non_zero_ratio = np.mean(diff) / 255.0
-                if non_zero_ratio > self.scene_change_thresh:
+                is_scene_change = False
+                if prev_gray_small is not None:
+                    # Normalized absolute difference
+                    diff = cv2.absdiff(gray_small, prev_gray_small)
+                    non_zero_ratio = np.mean(diff) / 255.0
+                    # Skip visually identical consecutive frames to avoid redundant OCR & thumbnail I/O
+                    if non_zero_ratio < 0.003:
+                        frame_idx += step_frames
+                        continue
+                    if non_zero_ratio > self.scene_change_thresh:
+                        is_scene_change = True
+                else:
                     is_scene_change = True
-            else:
-                is_scene_change = True
 
-            prev_gray_small = gray_small
+                prev_gray_small = gray_small
 
-            # Save keyframe preview thumbnail
-            thumb_name = f"frame_{record_id}_{frame_idx}.jpg"
-            thumb_path = os.path.join(THUMBNAIL_DIR, thumb_name)
-            
-            # Save thumbnail
-            h, w = frame.shape[:2]
-            thumb_w = 320
-            thumb_h = int(h * (thumb_w / float(w)))
-            resized_thumb = cv2.resize(frame, (thumb_w, thumb_h), interpolation=cv2.INTER_AREA)
-            cv2.imwrite(thumb_path, resized_thumb, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+                # Save keyframe preview thumbnail
+                thumb_name = f"frame_{record_id}_{frame_idx}.jpg"
+                thumb_path = os.path.join(THUMBNAIL_DIR, thumb_name)
 
-            # Convert BGR to RGB PIL Image for OCR
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            pil_image = Image.fromarray(rgb_frame)
+                # Save thumbnail
+                h, w = frame.shape[:2]
+                thumb_w = 320
+                thumb_h = int(h * (thumb_w / float(w)))
+                resized_thumb = cv2.resize(frame, (thumb_w, thumb_h), interpolation=cv2.INTER_AREA)
+                cv2.imwrite(thumb_path, resized_thumb, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
 
-            yield {
-                "record_id": record_id,
-                "frame_idx": frame_idx,
-                "timestamp_sec": timestamp_sec,
-                "pil_image": pil_image,
-                "is_scene_change": is_scene_change,
-                "thumb_path": thumb_path
-            }
+                # Convert BGR to RGB PIL Image for OCR
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                pil_image = Image.fromarray(rgb_frame)
 
-            frame_idx += step_frames
+                yield {
+                    "record_id": record_id,
+                    "frame_idx": frame_idx,
+                    "timestamp_sec": timestamp_sec,
+                    "pil_image": pil_image,
+                    "is_scene_change": is_scene_change,
+                    "thumb_path": thumb_path
+                }
 
-        cap.release()
+                frame_idx += step_frames
+        finally:
+            cap.release()

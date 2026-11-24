@@ -60,9 +60,9 @@ class AppleVisionOCR:
                 return self._fallback_recognize(pil_image)
 
         try:
-            # Convert PIL image to PNG bytes
+            # Convert PIL image to PNG bytes (compress_level=1 is lossless & ~5-8x faster than default)
             buf = io.BytesIO()
-            pil_image.save(buf, format="PNG")
+            pil_image.save(buf, format="PNG", compress_level=1)
             png_bytes = buf.getvalue()
 
             # Create CGImage via Quartz CGDataProvider
