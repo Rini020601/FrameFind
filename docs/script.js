@@ -15,7 +15,7 @@ const SAMPLE_RECORDS = [
       "48 | <span class=\"highlight-box\">TypeError: Cannot read properties of undefined (reading 'token')</span>",
       "49 |     at verifyUser (auth.ts:48:19)",
     ],
-    footerNote: "Jumped to 00:42 · Bounding box highlighted",
+    footerNote: "Jumped to 00:42 · Yellow OCR bounding-box highlight",
   },
   {
     id: "privacy",

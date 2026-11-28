@@ -6,7 +6,7 @@
   <title>FrameFind — Auto-Rename &amp; Search macOS Screenshots &amp; Recordings</title>
   <meta
     name="description"
-    content="Smart auto-naming, Finder Spotlight indexing, jump-to-timestamp OCR search, 1-click privacy redaction, and VideoToolbox compression for macOS screen recordings and screenshots."
+    content="Auto-rename macOS screenshots and screen recordings from on-screen context, search any spoken or visible word with jump-to-timestamp highlights, blur sensitive credentials, and compress videos locally."
   />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -19,8 +19,9 @@
         <span class="brand-name">FrameFind</span>
       </a>
       <nav class="nav-links" aria-label="Primary">
+        <a href="#auto-rename">Auto-Rename</a>
         <a href="#features">Features</a>
-        <a href="#how-it-works">How it works</a>
+        <a href="#how-it-works">Pipeline</a>
         <a href="#quickstart">Quickstart</a>
         <a
           href="https://github.com/Rini020601/FrameFind"
@@ -40,13 +41,13 @@
       <div class="container hero-inner">
         <div class="pill">
           <span class="pill-dot" aria-hidden="true"></span>
-          macOS · Apple Vision Neural Engine · 100% Local
+          macOS · Apple Vision Neural Engine · SQLite FTS5 · 100% On-Device
         </div>
         <h1>Auto-rename every screenshot &amp; recording. Search any word inside.</h1>
         <p class="hero-sub">
           FrameFind automatically renames cryptic <code>Screenshot …png</code> and
           <code>Screen Recording …mov</code> files from what's on screen, then lets you search
-          any word inside a recording and jump straight to the exact second.
+          any visible or spoken word inside a recording and jump straight to the exact second.
         </p>
         <div class="hero-actions">
           <a href="#quickstart" class="btn btn-primary">Get Started</a>
@@ -69,7 +70,7 @@
               <span class="dot dot-green"></span>
             </div>
             <div class="window-title">⚡ FrameFind — Intelligent OCR &amp; Video Indexer</div>
-            <div class="window-badge">● Watcher Active</div>
+            <div class="window-badge">● Watcher: Desktop Active</div>
           </div>
 
           <div class="preview-toolbar">
@@ -78,8 +79,8 @@
               <input
                 id="demo-search"
                 type="text"
-                placeholder="Search any error, slide title, or spoken word…"
-                aria-label="Try searching indexed recordings"
+                placeholder="Search any text, error message, code snippet, or slide title…"
+                aria-label="Try searching indexed captures"
               />
             </div>
             <div class="quick-chips" role="group" aria-label="Sample queries">
@@ -103,14 +104,15 @@
     </section>
 
     <!-- Before / After Auto-Rename -->
-    <section class="section section-alt">
+    <section class="section section-alt" id="auto-rename">
       <div class="container">
         <div class="section-head">
           <span class="eyebrow">Smart Auto-Renaming</span>
-          <h2>Goodbye, <code>Screen Recording 2026-11-15 at 16.30.12.mov</code></h2>
+          <h2>Goodbye, <code>Screenshot …png</code> &amp; <code>Screen Recording …mov</code></h2>
           <p>
-            FrameFind reads the active macOS app and the most prominent heading on screen,
-            renaming captures on disk and syncing Spotlight automatically.
+            Detects the active macOS app, active Chrome tab, or largest on-screen heading across
+            <code>.mov</code>, <code>.mp4</code>, <code>.m4v</code>, <code>.png</code>, and <code>.jpg</code> —
+            renaming files atomically on disk and syncing Finder Spotlight automatically.
           </p>
         </div>
 
@@ -118,7 +120,7 @@
           <div class="rename-row">
             <span class="file-old">Screen Recording 2026-11-15 at 20.15.30.mov</span>
             <span class="arrow" aria-hidden="true">→</span>
-            <span class="file-new">VS Code - SyntaxError (2026-11-15).mov</span>
+            <span class="file-new">VS Code - SyntaxError Bug (2026-11-15).mov</span>
           </div>
           <div class="rename-row">
             <span class="file-old">Screenshot 2026-11-22 at 14.08.11.png</span>
@@ -136,6 +138,15 @@
             <span class="file-new">Spotify - Your Library (2026-11-21).png</span>
           </div>
         </div>
+
+        <div class="tag-strip" aria-label="Recognized apps and categories">
+          <span class="tag-label">Auto-classifies:</span>
+          <span class="tag">💻 Code &amp; Terminal</span>
+          <span class="tag">📊 Slides &amp; Presentation</span>
+          <span class="tag">💬 Meeting &amp; Chat</span>
+          <span class="tag">📄 Doc &amp; Web</span>
+          <span class="tag">VS Code · Xcode · Chrome · Safari · Zoom · Slack · Figma · Notion · Calendar · Spotify</span>
+        </div>
       </div>
     </section>
 
@@ -147,17 +158,27 @@
           <h2>Built natively for macOS workflows</h2>
           <p>
             No cloud uploads, no external OCR binaries, no sluggish Electron wrappers.
-            Everything runs privately on your Mac.
+            Powered by PyObjC, Apple Vision, SQLite FTS5, and PySide6.
           </p>
         </div>
 
         <div class="feature-grid">
           <article class="card">
-            <div class="card-icon">⏱</div>
-            <h3>Jump-to-Timestamp Search</h3>
+            <div class="card-icon">🏷️</div>
+            <h3>Context-Aware Auto-Renaming</h3>
             <p>
-              SQLite FTS5 with BM25 ranking searches OCR text and optional local Whisper audio transcripts,
-              seeking the video player directly to the matching millisecond.
+              Combines frontmost macOS app detection, active Chrome tab parsing, YouTube watch-title
+              filtering, and cross-frame salience to name both screenshots and recordings cleanly.
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="card-icon">⏱</div>
+            <h3>Jump-to-Timestamp &amp; OCR Overlay</h3>
+            <p>
+              SQLite FTS5 (WAL + BM25) searches Apple Vision OCR and optional local
+              <code>mlx-whisper</code> transcripts, seeking the player to the exact second with
+              yellow bounding-box highlights and 1-click Copy Text/Code.
             </p>
           </article>
 
@@ -165,17 +186,9 @@
             <div class="card-icon">🔎</div>
             <h3>Native Finder &amp; Spotlight Search</h3>
             <p>
-              Writes deduplicated frame text into macOS Finder comments
-              (<code>kMDItemFinderComment</code>), so typing any word from a video in Finder finds it immediately.
-            </p>
-          </article>
-
-          <article class="card">
-            <div class="card-icon">⚡</div>
-            <h3>Apple Vision Neural Engine</h3>
-            <p>
-              Uses Apple's native <code>VNRecognizeTextRequest</code> via PyObjC for fast,
-              accurate on-device text and bounding-box extraction with zero cloud latency.
+              Writes deduplicated frame words into macOS Finder comments
+              (<code>kMDItemFinderComment</code> + <code>mdimport</code>), so typing any word from
+              inside a video or screenshot in Finder finds it immediately.
             </p>
           </article>
 
@@ -183,26 +196,29 @@
             <div class="card-icon">🔒</div>
             <h3>1-Click Privacy Redactor</h3>
             <p>
-              Automatically detects OpenAI/AWS/GitHub keys, Bearer tokens, and email addresses,
-              applying Gaussian blur over their exact bounding boxes before you share.
+              Automatically detects OpenAI/Gemini API keys (<code>sk-</code>, <code>AIza</code>),
+              GitHub tokens (<code>ghp_</code>), AWS keys (<code>AKIA</code>), Bearer tokens,
+              Private Keys, passwords, and emails — blurring exact bounding boxes before export.
             </p>
           </article>
 
           <article class="card">
             <div class="card-icon">🗜</div>
-            <h3>VideoToolbox Compression</h3>
+            <h3>VideoToolbox Hardware Compression</h3>
             <p>
-              Compresses bloated macOS <code>.mov</code> captures with hardware-accelerated
-              <code>h264_videotoolbox</code>, cutting file sizes by 80–90% while staying crisp.
+              Compresses bloated macOS <code>.mov</code> captures via hardware-accelerated
+              <code>h264_videotoolbox</code> (with <code>libx264</code> and OpenCV fallbacks),
+              saving 80–90% disk space while keeping text sharp.
             </p>
           </article>
 
           <article class="card">
             <div class="card-icon">📂</div>
-            <h3>Zero-Touch Background Daemon</h3>
+            <h3>Menu Bar Tray &amp; Background Daemon</h3>
             <p>
-              Runs silently via macOS <code>LaunchAgent</code> watching <code>~/Desktop</code>
-              and <code>~/Movies</code>. Record with <code>⌘⇧5</code> and let FrameFind handle the rest.
+              Includes a lightweight macOS menu bar icon (Quick Search, Pause/Resume Auto-Rename,
+              Recent Captures in Finder, Orphan Cleanup) plus a silent <code>LaunchAgent</code>
+              watching Desktop, Movies, Downloads, and Documents.
             </p>
           </article>
         </div>
@@ -220,26 +236,27 @@
         <div class="steps-grid">
           <div class="step">
             <div class="step-num">01</div>
-            <h3>Detect &amp; Sample</h3>
+            <h3>Watch &amp; Sample Keyframes</h3>
             <p>
-              Watchdog monitors your Desktop &amp; Movies folders. When a capture finishes writing,
-              FrameFind extracts keyframes on scene changes and periodic intervals.
+              <code>watchdog</code> debounces new captures until macOS finishes writing, then
+              extracts keyframes on scene transitions (window/slide switches) and 2-second intervals.
             </p>
           </div>
           <div class="step">
             <div class="step-num">02</div>
-            <h3>Recognize &amp; Rename</h3>
+            <h3>Vision OCR, Whisper &amp; Rename</h3>
             <p>
-              Apple Vision extracts text and bounding boxes. SmartNamer identifies the active app
-              and primary heading, renames the file, and updates Spotlight metadata.
+              Apple Vision (<code>VNRecognizeTextRequest</code>) extracts text and bounding boxes
+              on the Neural Engine, optional Whisper aligns spoken words, and SmartNamer renames the
+              file and updates Spotlight.
             </p>
           </div>
           <div class="step">
             <div class="step-num">03</div>
             <h3>Search, Redact &amp; Compress</h3>
             <p>
-              Query anything in the PySide6 desktop app or CLI. Jump to highlighted matches,
-              blur sensitive credentials in one click, or shrink multi-gigabyte recordings.
+              Filter by Videos, Screenshots, Code, Slides, or Meetings in the PySide6 desktop app
+              or CLI. Jump to highlighted matches, blur secrets in 1 click, or shrink multi-GB clips.
             </p>
           </div>
         </div>
@@ -273,15 +290,21 @@
 cd FrameFind
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt</code></pre>
+pip install -r requirements.txt
 
-          <pre class="code-block hidden" id="code-gui"><code># Launch the native PySide6 desktop app
+# Optional: VideoToolbox compression &amp; local Whisper speech search
+brew install ffmpeg
+pip install mlx-whisper</code></pre>
+
+          <pre class="code-block hidden" id="code-gui"><code># Launch the native PySide6 desktop app + menu bar tray
 python main.py
 
 # Or use the CLI directly
 python main.py index ~/Desktop
 python main.py search "TypeError"
-python main.py stats</code></pre>
+python main.py rename "Screen Recording.mov"
+python main.py stats
+python main.py cleanup</code></pre>
 
           <pre class="code-block hidden" id="code-daemon"><code># Install as a silent macOS LaunchAgent (auto-starts on login)
 python daemon.py install
@@ -300,7 +323,7 @@ python daemon.py uninstall</code></pre>
     <div class="container footer-inner">
       <div class="footer-brand">
         <span>⚡ FrameFind</span>
-        <span class="muted">· Local-first screen recording intelligence for macOS</span>
+        <span class="muted">· Local-first screenshot &amp; recording intelligence for macOS · MIT License</span>
       </div>
       <div class="footer-links">
         <a href="https://github.com/Rini020601/FrameFind" target="_blank" rel="noopener noreferrer">
