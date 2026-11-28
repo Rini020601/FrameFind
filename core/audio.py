@@ -1,5 +1,5 @@
 """
-Local Audio Transcription Module for FrameFind (Screenrecord Manager)
+Local Audio Transcription Module for FrameFind
 Extracts audio tracks from screen recordings and transcribes speech locally
 using mlx-whisper (Apple Silicon) or openai-whisper when installed.
 Aligns spoken segments to timestamped events so spoken words are searchable in FTS5.

@@ -1,5 +1,5 @@
 """
-macOS Menu Bar / System Tray Integration for FrameFind (Screenrecord Manager)
+macOS Menu Bar / System Tray Integration for FrameFind
 Provides a lightweight menu bar icon using PySide6 QSystemTrayIcon with:
   - Quick Search (raises window & focuses search bar)
   - Pause / Resume Auto-Rename

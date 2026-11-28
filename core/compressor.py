@@ -1,5 +1,5 @@
 """
-Hardware-Accelerated Compressor Module for Screenrecord Manager
+Hardware-Accelerated Compressor Module for FrameFind
 Compresses bloated macOS screen recordings (.mov) into optimized .mp4
 using Apple VideoToolbox (h264_videotoolbox / hevc_videotoolbox) or OpenCV.
 """

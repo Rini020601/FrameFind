@@ -1,5 +1,5 @@
 """
-Theme and Stylesheet for Screenrecord Manager
+Theme and Stylesheet for FrameFind
 Modern macOS Pro Dark Theme with rounded controls, clean typography, and accent highlights.
 """
 

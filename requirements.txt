@@ -11,3 +11,7 @@ pyobjc-framework-Vision>=10.0
 
 # Filesystem Watching
 watchdog>=4.0.0
+
+# Optional: Local Audio Transcription (install one of the following + `brew install ffmpeg`)
+# mlx-whisper>=0.4.0       # Apple Silicon (recommended)
+# openai-whisper>=20231117 # Intel / cross-platform fallback

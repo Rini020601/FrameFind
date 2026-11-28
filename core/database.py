@@ -1,5 +1,5 @@
 """
-Database Module for Screenrecord Manager
+Database Module for FrameFind
 SQLite FTS5 full-text search index for video keyframes and screenshots.
 """
 
@@ -10,9 +10,10 @@ import threading
 from typing import List, Dict, Any, Optional
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_DB_DIR = os.environ.get(
-    "SCREENRECORD_DATA_DIR",
-    os.path.join(PROJECT_ROOT, ".data")
+DEFAULT_DB_DIR = (
+    os.environ.get("FRAMEFIND_DATA_DIR")
+    or os.environ.get("SCREENRECORD_DATA_DIR")
+    or os.path.join(PROJECT_ROOT, ".data")
 )
 DEFAULT_DB_PATH = os.path.join(DEFAULT_DB_DIR, "library.db")
 

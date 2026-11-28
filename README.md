@@ -1,4 +1,4 @@
-# ⚡ FrameFind (Screenrecord Manager)
+# ⚡ FrameFind
 
 > **Smart Auto-Naming, Finder Spotlight Indexing, and Jump-to-Timestamp Search for macOS Screenshots & Screen Recordings — powered by Apple Vision OCR, SQLite FTS5, and PySide6.**
 
@@ -7,6 +7,9 @@
 [![Apple Vision](https://img.shields.io/badge/OCR-Apple%20Vision%20(Neural%20Engine)-purple.svg)](https://developer.apple.com/documentation/vision)
 [![PySide6](https://img.shields.io/badge/GUI-PySide6%20%2F%20Qt-green.svg)](https://www.qt.io/)
 [![SQLite FTS5](https://img.shields.io/badge/Search-SQLite%20FTS5-orange.svg)](https://www.sqlite.org/fts5.html)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+🌐 **Website:** [rini020601.github.io/FrameFind](https://rini020601.github.io/FrameFind/)
 
 ---
 
@@ -16,7 +19,7 @@ On macOS, recordings sit on the Desktop named `Screen Recording 2026-11-15 at 16
 
 If you recorded a 15-minute lecture or a bug reproduction, finding the exact 5 seconds where an error occurred requires manually dragging the scrub bar across the entire video.
 
-**Screenrecord Manager** solves this:
+**FrameFind** solves this:
 1. Samples keyframes on intelligent scene changes (window switches, terminal outputs, slide transitions).
 2. Extracts on-screen text in milliseconds using **Apple Vision's Neural Engine** (`VNRecognizeTextRequest`).
 3. Indexes everything into a high-performance **SQLite FTS5** inverted index.
@@ -122,6 +125,16 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+#### Optional: Hardware Video Compression & Local Audio Transcription
+
+```bash
+# Required for Apple VideoToolbox hardware compression & audio extraction
+brew install ffmpeg
+
+# Optional: searchable spoken audio transcripts (Apple Silicon recommended)
+pip install mlx-whisper
+```
+
 ### 2. Launch the Desktop GUI
 
 ```bash
@@ -176,7 +189,7 @@ python -m unittest tests/test_core.py
 
 ## 💼 Why This Stands Out on a Resume
 
-| Typical Portfolio Project | Screenrecord Manager |
+| Typical Portfolio Project | FrameFind |
 | :--- | :--- |
 | Generic LangChain / OpenAI wrapper | Native multi-modal systems pipeline (Video + Computer Vision + Full-Text Search) |
 | Uses slow external CLI binaries | Deep macOS integration via PyObjC & Apple Vision Neural Engine |

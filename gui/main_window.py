@@ -1,5 +1,5 @@
 """
-Main Window for Screenrecord Manager Desktop Application
+Main Window for FrameFind Desktop Application
 Integrates the search bar, category filters, results list, video player,
 inspector tabs, background indexing worker thread, and directory watcher.
 """
@@ -55,7 +55,7 @@ class IndexWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Screenrecord Manager — Intelligent OCR & Video Indexer")
+        self.setWindowTitle("FrameFind — Intelligent OCR & Video Indexer")
         self.resize(1280, 840)
         self.setAcceptDrops(True)
 
@@ -87,7 +87,7 @@ class MainWindow(QMainWindow):
 
         # Top row: Brand + Actions
         top_row = QHBoxLayout()
-        logo_label = QLabel("⚡ Screenrecord Manager")
+        logo_label = QLabel("⚡ FrameFind")
         logo_label.setStyleSheet("font-size: 16px; font-weight: 700; color: #ffffff;")
         top_row.addWidget(logo_label)
 
@@ -373,7 +373,7 @@ class MainWindow(QMainWindow):
             f"• <b>Total Indexed Storage:</b> {gb} GB<br><br>"
             f"<i>Powered by Apple Silicon Vision Neural Engine & SQLite FTS5</i>"
         )
-        QMessageBox.information(self, "Screenrecord Manager Stats", msg)
+        QMessageBox.information(self, "FrameFind Stats", msg)
 
     def _show_daemon_dialog(self):
         from daemon import get_launch_agent_status, install_launch_agent, uninstall_launch_agent

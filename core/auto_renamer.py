@@ -1,5 +1,5 @@
 """
-Background Auto-Renamer Daemon for Screenrecord Manager
+Background Auto-Renamer Daemon for FrameFind
 Monitors macOS capture directories (Desktop, Downloads, Movies, or custom macOS screencapture location).
 When a new generic recording or screenshot is saved, it automatically:
   1. Waits for macOS to finish writing the file.
@@ -250,7 +250,7 @@ class SilentCaptureHandler(FileSystemEventHandler):
 
             logger.info(f"🎉 Successfully auto-renamed in Finder:\n   '{old_filename}'\n   --> '{new_filename}' in {os.path.dirname(new_path)}")
             send_macos_notification(
-                "⚡ Screenrecord Auto-Renamed",
+                "⚡ FrameFind Auto-Renamed",
                 f"Saved as: {new_filename}"
             )
             if self.on_renamed:
@@ -275,7 +275,7 @@ class SilentCaptureHandler(FileSystemEventHandler):
             self._process_file(file_path)
 
 
-class ScreenrecordDaemon:
+class FrameFindDaemon:
     def __init__(self, custom_dirs: Optional[List[str]] = None):
         setup_logging()
         self.db = SearchDatabase()
@@ -310,7 +310,7 @@ class ScreenrecordDaemon:
         if enforce_single_instance:
             self._lock_file = acquire_daemon_lock()
             if self._lock_file is None:
-                logger.warning("Another Screenrecord Auto-Renamer daemon is already running. Exiting duplicate instance.")
+                logger.warning("Another FrameFind Auto-Renamer daemon is already running. Exiting duplicate instance.")
                 return
 
         self.observer = Observer()
@@ -322,7 +322,7 @@ class ScreenrecordDaemon:
 
         self.observer.start()
         self.is_running = True
-        logger.info("🚀 Screenrecord Auto-Renamer background service is active!")
+        logger.info("🚀 FrameFind Auto-Renamer background service is active!")
         self.handler.process_recent(self.watch_dirs)
 
         if blocking:
@@ -334,7 +334,7 @@ class ScreenrecordDaemon:
 
     def stop(self):
         if self.observer and self.is_running:
-            logger.info("Stopping Screenrecord Auto-Renamer service...")
+            logger.info("Stopping FrameFind Auto-Renamer service...")
             self.observer.stop()
             self.observer.join()
             self.is_running = False

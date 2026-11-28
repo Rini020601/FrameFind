@@ -1,5 +1,5 @@
 """
-Classifier Module for Screenrecord Manager
+Classifier Module for FrameFind
 Automatically categorizes captures into domains (Code, Presentation, Meeting, Docs)
 and extracts contextual app cues.
 """

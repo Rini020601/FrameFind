@@ -1,5 +1,5 @@
 """
-GUI Application Launcher for Screenrecord Manager
+GUI Application Launcher for FrameFind
 """
 
 import sys
@@ -11,8 +11,8 @@ from .main_window import MainWindow
 def run_gui():
     # High DPI scaling attributes for Apple Retina displays
     app = QApplication(sys.argv)
-    app.setApplicationName("Screenrecord Manager")
-    app.setOrganizationName("ScreenrecordManager")
+    app.setApplicationName("FrameFind")
+    app.setOrganizationName("FrameFind")
 
     window = MainWindow()
     window.show()

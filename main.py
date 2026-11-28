@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Screenrecord Manager — Intelligent OCR, Video Indexing & Privacy Redaction for macOS.
+FrameFind — Intelligent OCR, Video Indexing & Privacy Redaction for macOS.
 
 Usage:
     python main.py                  # Launch the Native Desktop GUI
@@ -19,7 +19,7 @@ from typing import List
 from core.database import SearchDatabase
 from core.indexer import IndexerPipeline
 from core.namer import SmartNamer
-from core.auto_renamer import ScreenrecordDaemon
+from core.auto_renamer import FrameFindDaemon
 
 
 def cli_index(paths: List[str], auto_rename: bool = True):
@@ -78,7 +78,7 @@ def cli_search(query: str):
 def cli_watch():
     print("👀 Starting Background Auto-Renamer Daemon...")
     print("Captures saved to Desktop/Finder will be automatically renamed based on their content.\n")
-    daemon = ScreenrecordDaemon()
+    daemon = FrameFindDaemon()
     daemon.start(blocking=True)
 
 
@@ -125,7 +125,7 @@ def cli_stats():
     hrs = round(stats.get("total_duration_sec", 0.0) / 3600.0, 2)
     mb = round(stats.get("total_size_bytes", 0) / (1024 * 1024), 1)
 
-    print("📊 Screenrecord Manager Library Stats:")
+    print("📊 FrameFind Library Stats:")
     print(f"  • Total Videos Indexed:      {stats.get('total_videos', 0)}")
     print(f"  • Total Screenshots Indexed: {stats.get('total_screenshots', 0)}")
     print(f"  • Total Indexed Events:      {stats.get('total_indexed_events', 0)}")
@@ -143,7 +143,7 @@ def cli_cleanup():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Screenrecord Manager — Intelligent OCR & Video Indexer")
+    parser = argparse.ArgumentParser(description="FrameFind — Intelligent OCR & Video Indexer for macOS")
     parser.add_argument("--gui", action="store_true", help="Launch the Desktop GUI")
     
     subparsers = parser.add_subparsers(dest="command")

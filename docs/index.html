@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FrameFind — Search Inside Your macOS Screen Recordings</title>
+  <meta
+    name="description"
+    content="Smart auto-naming, Finder Spotlight indexing, jump-to-timestamp OCR search, 1-click privacy redaction, and VideoToolbox compression for macOS screen recordings and screenshots."
+  />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Navigation -->
+  <header class="nav">
+    <div class="container nav-inner">
+      <a href="#" class="brand" aria-label="FrameFind home">
+        <span class="brand-icon" aria-hidden="true">⚡</span>
+        <span class="brand-name">FrameFind</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#quickstart">Quickstart</a>
+        <a
+          href="https://github.com/Rini020601/FrameFind"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="nav-github"
+        >
+          GitHub ↗
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero -->
+    <section class="hero">
+      <div class="container hero-inner">
+        <div class="pill">
+          <span class="pill-dot" aria-hidden="true"></span>
+          macOS · Apple Vision Neural Engine · 100% Local
+        </div>
+        <h1>Search every word inside your macOS screen recordings.</h1>
+        <p class="hero-sub">
+          FrameFind automatically renames cryptic <code>Screen Recording …mov</code> files,
+          indexes on-screen text and speech locally, and jumps straight to the exact second you need.
+        </p>
+        <div class="hero-actions">
+          <a href="#quickstart" class="btn btn-primary">Get Started</a>
+          <a
+            href="https://github.com/Rini020601/FrameFind"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-secondary"
+          >
+            View on GitHub
+          </a>
+        </div>
+
+        <!-- Interactive App Preview -->
+        <div class="preview-shell" aria-label="Interactive FrameFind search preview">
+          <div class="window-bar">
+            <div class="traffic-lights" aria-hidden="true">
+              <span class="dot dot-red"></span>
+              <span class="dot dot-yellow"></span>
+              <span class="dot dot-green"></span>
+            </div>
+            <div class="window-title">⚡ FrameFind — Intelligent OCR &amp; Video Indexer</div>
+            <div class="window-badge">● Watcher Active</div>
+          </div>
+
+          <div class="preview-toolbar">
+            <div class="search-box">
+              <span class="search-icon" aria-hidden="true">🔍</span>
+              <input
+                id="demo-search"
+                type="text"
+                placeholder="Search any error, slide title, or spoken word…"
+                aria-label="Try searching indexed recordings"
+              />
+            </div>
+            <div class="quick-chips" role="group" aria-label="Sample queries">
+              <button class="chip active" data-query="TypeError">TypeError</button>
+              <button class="chip" data-query="sk-proj">sk-proj</button>
+              <button class="chip" data-query="Roadmap">Roadmap</button>
+              <button class="chip" data-query="kubernetes">kubernetes</button>
+            </div>
+          </div>
+
+          <div class="preview-body">
+            <div class="preview-list" id="demo-results" role="list">
+              <!-- Populated by script.js -->
+            </div>
+            <div class="preview-stage" id="demo-stage">
+              <!-- Populated by script.js -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Before / After Auto-Rename -->
+    <section class="section section-alt">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow">Smart Auto-Renaming</span>
+          <h2>Goodbye, <code>Screen Recording 2026-11-15 at 16.30.12.mov</code></h2>
+          <p>
+            FrameFind reads the active macOS app and the most prominent heading on screen,
+            renaming captures on disk and syncing Spotlight automatically.
+          </p>
+        </div>
+
+        <div class="rename-list">
+          <div class="rename-row">
+            <span class="file-old">Screen Recording 2026-11-15 at 20.15.30.mov</span>
+            <span class="arrow" aria-hidden="true">→</span>
+            <span class="file-new">VS Code - SyntaxError (2026-11-15).mov</span>
+          </div>
+          <div class="rename-row">
+            <span class="file-old">Screenshot 2026-11-22 at 14.08.11.png</span>
+            <span class="arrow" aria-hidden="true">→</span>
+            <span class="file-new">Brave Browser - API Migration Guide (2026-11-22).png</span>
+          </div>
+          <div class="rename-row">
+            <span class="file-old">Screenshot 2026-11-21 at 09.42.03.png</span>
+            <span class="arrow" aria-hidden="true">→</span>
+            <span class="file-new">Calendar - November 2026 (2026-11-21).png</span>
+          </div>
+          <div class="rename-row">
+            <span class="file-old">Screenshot 2026-11-21 at 18.05.47.png</span>
+            <span class="arrow" aria-hidden="true">→</span>
+            <span class="file-new">Spotify - Your Library (2026-11-21).png</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section class="section" id="features">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow">Features</span>
+          <h2>Built natively for macOS workflows</h2>
+          <p>
+            No cloud uploads, no external OCR binaries, no sluggish Electron wrappers.
+            Everything runs privately on your Mac.
+          </p>
+        </div>
+
+        <div class="feature-grid">
+          <article class="card">
+            <div class="card-icon">⏱</div>
+            <h3>Jump-to-Timestamp Search</h3>
+            <p>
+              SQLite FTS5 with BM25 ranking searches OCR text and optional local Whisper audio transcripts,
+              seeking the video player directly to the matching millisecond.
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="card-icon">🔎</div>
+            <h3>Native Finder &amp; Spotlight Search</h3>
+            <p>
+              Writes deduplicated frame text into macOS Finder comments
+              (<code>kMDItemFinderComment</code>), so typing any word from a video in Finder finds it immediately.
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="card-icon">⚡</div>
+            <h3>Apple Vision Neural Engine</h3>
+            <p>
+              Uses Apple's native <code>VNRecognizeTextRequest</code> via PyObjC for fast,
+              accurate on-device text and bounding-box extraction with zero cloud latency.
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="card-icon">🔒</div>
+            <h3>1-Click Privacy Redactor</h3>
+            <p>
+              Automatically detects OpenAI/AWS/GitHub keys, Bearer tokens, and email addresses,
+              applying Gaussian blur over their exact bounding boxes before you share.
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="card-icon">🗜</div>
+            <h3>VideoToolbox Compression</h3>
+            <p>
+              Compresses bloated macOS <code>.mov</code> captures with hardware-accelerated
+              <code>h264_videotoolbox</code>, cutting file sizes by 80–90% while staying crisp.
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="card-icon">📂</div>
+            <h3>Zero-Touch Background Daemon</h3>
+            <p>
+              Runs silently via macOS <code>LaunchAgent</code> watching <code>~/Desktop</code>
+              and <code>~/Movies</code>. Record with <code>⌘⇧5</code> and let FrameFind handle the rest.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="section section-alt" id="how-it-works">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow">Pipeline</span>
+          <h2>How FrameFind works under the hood</h2>
+        </div>
+
+        <div class="steps-grid">
+          <div class="step">
+            <div class="step-num">01</div>
+            <h3>Detect &amp; Sample</h3>
+            <p>
+              Watchdog monitors your Desktop &amp; Movies folders. When a capture finishes writing,
+              FrameFind extracts keyframes on scene changes and periodic intervals.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-num">02</div>
+            <h3>Recognize &amp; Rename</h3>
+            <p>
+              Apple Vision extracts text and bounding boxes. SmartNamer identifies the active app
+              and primary heading, renames the file, and updates Spotlight metadata.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-num">03</div>
+            <h3>Search, Redact &amp; Compress</h3>
+            <p>
+              Query anything in the PySide6 desktop app or CLI. Jump to highlighted matches,
+              blur sensitive credentials in one click, or shrink multi-gigabyte recordings.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quickstart -->
+    <section class="section" id="quickstart">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow">Quickstart</span>
+          <h2>Up and running in 60 seconds</h2>
+          <p>Requires macOS (Apple Silicon or Intel) and Python 3.10+.</p>
+        </div>
+
+        <div class="code-card">
+          <div class="code-tabs" role="tablist" aria-label="Quickstart commands">
+            <button class="code-tab active" role="tab" aria-selected="true" data-tab="install">
+              1. Install
+            </button>
+            <button class="code-tab" role="tab" aria-selected="false" data-tab="gui">
+              2. Desktop &amp; CLI
+            </button>
+            <button class="code-tab" role="tab" aria-selected="false" data-tab="daemon">
+              3. Background Daemon
+            </button>
+            <button class="copy-btn" id="copy-code" type="button">Copy</button>
+          </div>
+
+          <pre class="code-block" id="code-install"><code>git clone https://github.com/Rini020601/FrameFind.git
+cd FrameFind
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt</code></pre>
+
+          <pre class="code-block hidden" id="code-gui"><code># Launch the native PySide6 desktop app
+python main.py
+
+# Or use the CLI directly
+python main.py index ~/Desktop
+python main.py search "TypeError"
+python main.py stats</code></pre>
+
+          <pre class="code-block hidden" id="code-daemon"><code># Install as a silent macOS LaunchAgent (auto-starts on login)
+python daemon.py install
+
+# Check service status
+python daemon.py status
+
+# Uninstall anytime
+python daemon.py uninstall</code></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <span>⚡ FrameFind</span>
+        <span class="muted">· Local-first screen recording intelligence for macOS</span>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/Rini020601/FrameFind" target="_blank" rel="noopener noreferrer">
+          GitHub
+        </a>
+        <a href="https://github.com/Rini020601/FrameFind/issues" target="_blank" rel="noopener noreferrer">
+          Issues
+        </a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

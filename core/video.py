@@ -1,5 +1,5 @@
 """
-Video Processor Module for Screenrecord Manager
+Video Processor Module for FrameFind
 Extracts keyframes, detects scene changes (window/slide switches),
 and generates thumbnails with precise millisecond timestamps.
 """
@@ -11,9 +11,10 @@ from PIL import Image
 from typing import List, Dict, Any, Generator, Tuple, Optional
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-THUMBNAIL_DIR = os.environ.get(
-    "SCREENRECORD_THUMB_DIR",
-    os.path.join(PROJECT_ROOT, ".data", "thumbnails")
+THUMBNAIL_DIR = (
+    os.environ.get("FRAMEFIND_THUMB_DIR")
+    or os.environ.get("SCREENRECORD_THUMB_DIR")
+    or os.path.join(PROJECT_ROOT, ".data", "thumbnails")
 )
 os.makedirs(THUMBNAIL_DIR, exist_ok=True)
 

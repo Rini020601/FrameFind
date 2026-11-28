@@ -1,5 +1,5 @@
 """
-Privacy & Redaction Module for Screenrecord Manager
+Privacy & Redaction Module for FrameFind
 Automatically detects sensitive tokens (API keys, emails, passwords, auth tokens)
 and applies bounding-box blurring/masking to protect privacy before sharing.
 """

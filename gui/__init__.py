@@ -1,5 +1,5 @@
 """
-GUI Package for Screenrecord Manager.
+GUI Package for FrameFind.
 """
 from .main_window import MainWindow
 

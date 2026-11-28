@@ -1,5 +1,5 @@
 """
-Smart Auto-Naming Module for Screenrecord Manager
+Smart Auto-Naming Module for FrameFind
 Uses Visual Salience, Ground-Truth macOS Menu Bar Detection, URL Parsing,
 and Domain Context to accurately name screen recordings after the TRUE central content
 (e.g., 'GitHub - Email Settings', 'Apple Maps - McDonald\'s', 'Google Search - How To Screen Record On Mac')
@@ -36,7 +36,7 @@ UI_STOPWORDS = {
     "apple maps notifications", "notifications may include alerts",
 
     # Own app UI tokens (prevent self-referential renaming)
-    "screenrecord manager", "auto-rename", "library stats", "watcher: desktop active",
+    "framefind", "screenrecord manager", "auto-rename", "library stats", "watcher: desktop active",
     "all captures", "search any text", "jump to timestamp", "privacy redactor",
 
     # Planner / wellness widget noise
@@ -406,8 +406,8 @@ class SmartNamer:
         # 6. CODE EDITORS / TERMINAL: Actual File or Error
         # -------------------------------------------------------------
         if not subject and (app_name in ["VS Code", "Terminal", "Xcode"] or category == "Code & Terminal"):
-            # Only consider Code Error if not in Screenrecord Manager UI
-            if "Screenrecord Manager" not in combined:
+            # Only consider Code Error if not in FrameFind UI
+            if "FrameFind" not in combined and "Screenrecord Manager" not in combined:
                 err_match = re.search(r'\b(TypeError|SyntaxError|NameError|IndexError|ValueError|AttributeError|KeyError)\b', combined)
                 if err_match:
                     subject = f"{err_match.group(1)} Fix" if "fix" in combined.lower() else f"{err_match.group(1)} Bug"
@@ -521,7 +521,7 @@ class SmartNamer:
                 raw_text = b.get("text", "").strip()
                 t_lower = raw_text.lower()
 
-                if len(raw_text) < 3 or t_lower in UI_STOPWORDS or any(s in t_lower for s in ["screenrecord manager", "click to stop"]):
+                if len(raw_text) < 3 or t_lower in UI_STOPWORDS or any(s in t_lower for s in ["framefind", "screenrecord manager", "click to stop"]):
                     continue
                 if app_lower and t_lower == app_lower:
                     continue

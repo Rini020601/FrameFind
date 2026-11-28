@@ -1,5 +1,5 @@
 """
-Core package for Screenrecord Manager.
+Core package for FrameFind.
 """
 from .database import SearchDatabase
 from .ocr import AppleVisionOCR, get_ocr_engine

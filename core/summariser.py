@@ -50,7 +50,7 @@ SUMMARY_STOPWORDS: Set[str] = {
     "file", "edit", "help", "settings", "profile", "sign", "login", "home",
     "finder", "output", "terminal", "problems", "outline", "timeline",
     "general", "account", "billing", "security", "notification", "notifications",
-    "screenrecord", "manager",
+    "framefind", "screenrecord", "manager",
 }
 
 # Patterns that are definitely noise — never include in summary

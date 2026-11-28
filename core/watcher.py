@@ -1,5 +1,5 @@
 """
-Filesystem Watcher Daemon for Screenrecord Manager
+Filesystem Watcher Daemon for FrameFind
 Monitors ~/Desktop and ~/Movies for newly created macOS screen recordings and screenshots.
 Debounces file writes until macOS finishes saving the file.
 """

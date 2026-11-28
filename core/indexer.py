@@ -1,5 +1,5 @@
 """
-Indexer Pipeline Module for Screenrecord Manager
+Indexer Pipeline Module for FrameFind
 Orchestrates metadata extraction, keyframe sampling, Apple Vision OCR,
 categorization, and database persistence.
 """

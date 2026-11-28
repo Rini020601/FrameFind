@@ -1,4 +1,4 @@
-"""Rotating log configuration for the Screenrecord Manager daemon."""
+"""Rotating log configuration for the FrameFind daemon."""
 
 import logging
 import logging.handlers
@@ -7,11 +7,13 @@ import sys
 from typing import Optional
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_LOG_DIR = os.environ.get(
-    "SCREENRECORD_LOG_DIR", os.path.join(PROJECT_ROOT, ".data", "logs")
+DEFAULT_LOG_DIR = (
+    os.environ.get("FRAMEFIND_LOG_DIR")
+    or os.environ.get("SCREENRECORD_LOG_DIR")
+    or os.path.join(PROJECT_ROOT, ".data", "logs")
 )
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-_FLAG = "_screenrecord_logging_configured"
+_FLAG = "_framefind_logging_configured"
 
 
 def setup_logging(

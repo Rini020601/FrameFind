@@ -1,5 +1,5 @@
 """
-OCR Module for Screenrecord Manager
+OCR Module for FrameFind
 High-performance on-device OCR using native Apple Vision framework (Vision.framework) via PyObjC.
 Ultra-fast on Apple Silicon Neural Engine with zero external binary dependencies.
 """

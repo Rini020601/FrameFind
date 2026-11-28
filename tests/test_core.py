@@ -1,5 +1,5 @@
 """
-Automated Test Suite for Screenrecord Manager
+Automated Test Suite for FrameFind
 Tests database FTS5 queries, Apple Vision OCR, categorization,
 privacy redactor, video processing, and indexing pipeline.
 """
@@ -37,7 +37,7 @@ class StubOCR:
         }]
 
 
-class TestScreenrecordManager(unittest.TestCase):
+class TestFrameFind(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self.temp_dir.name, "test_library.db")

@@ -1,5 +1,5 @@
 """
-Results List Widget for Screenrecord Manager
+Results List Widget for FrameFind
 Renders rich search results and library items with thumbnails, badges, and snippets.
 """
 

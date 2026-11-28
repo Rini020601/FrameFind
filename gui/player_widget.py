@@ -1,5 +1,5 @@
 """
-Interactive Video & Image Player Widget for Screenrecord Manager
+Interactive Video & Image Player Widget for FrameFind
 Supports hardware video playback, timeline scrubbing, speed control, and instant jump-to-timestamp.
 """
 

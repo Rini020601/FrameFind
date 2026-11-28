@@ -1,5 +1,5 @@
 """
-Daemon Service Manager for Screenrecord Manager
+Daemon Service Manager for FrameFind
 Allows installing, running, and managing the background auto-renaming daemon
 as a native macOS LaunchAgent (so it runs silently in the background on startup).
 
@@ -15,11 +15,13 @@ import sys
 import subprocess
 from pathlib import Path
 
-from core.auto_renamer import ScreenrecordDaemon
+from core.auto_renamer import FrameFindDaemon
 
-LAUNCH_AGENT_LABEL = "com.screenrecord.manager"
+LAUNCH_AGENT_LABEL = "com.framefind.daemon"
+LEGACY_LAUNCH_AGENT_LABEL = "com.screenrecord.manager"
 LAUNCH_AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
 PLIST_PATH = LAUNCH_AGENTS_DIR / f"{LAUNCH_AGENT_LABEL}.plist"
+LEGACY_PLIST_PATH = LAUNCH_AGENTS_DIR / f"{LEGACY_LAUNCH_AGENT_LABEL}.plist"
 
 
 def get_launch_agent_status():
@@ -89,8 +91,11 @@ def install_launch_agent():
     with open(PLIST_PATH, "w", encoding="utf-8") as f:
         f.write(plist_content)
 
-    # Load launch agent with launchctl
+    # Load launch agent with launchctl (unload any legacy plist first)
     try:
+        if LEGACY_PLIST_PATH.exists():
+            subprocess.run(["launchctl", "unload", str(LEGACY_PLIST_PATH)], capture_output=True, check=False)
+            LEGACY_PLIST_PATH.unlink(missing_ok=True)
         subprocess.run(["launchctl", "unload", str(PLIST_PATH)], capture_output=True, check=False)
         subprocess.run(["launchctl", "load", "-w", str(PLIST_PATH)], check=True)
         print("✅ macOS Background Service successfully installed!")
@@ -105,13 +110,17 @@ def install_launch_agent():
 
 
 def uninstall_launch_agent():
-    """Unload and remove the LaunchAgent."""
-    if PLIST_PATH.exists():
-        try:
-            subprocess.run(["launchctl", "unload", str(PLIST_PATH)], capture_output=True, check=False)
-        except Exception:
-            pass
-        PLIST_PATH.unlink(missing_ok=True)
+    """Unload and remove the LaunchAgent (and any legacy plist)."""
+    removed = False
+    for plist in (PLIST_PATH, LEGACY_PLIST_PATH):
+        if plist.exists():
+            try:
+                subprocess.run(["launchctl", "unload", str(plist)], capture_output=True, check=False)
+            except Exception:
+                pass
+            plist.unlink(missing_ok=True)
+            removed = True
+    if removed:
         print("✅ macOS Background Service uninstalled.")
     else:
         print("Service is not currently installed.")
@@ -129,7 +138,7 @@ def status_launch_agent():
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] == "start":
-        daemon = ScreenrecordDaemon()
+        daemon = FrameFindDaemon()
         daemon.start(blocking=True)
     elif sys.argv[1] == "install":
         install_launch_agent()

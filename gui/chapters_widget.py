@@ -1,5 +1,5 @@
 """
-Inspector & Chapters Widget for Screenrecord Manager
+Inspector & Chapters Widget for FrameFind
 Provides timestamp chapter navigation, full-frame OCR text inspection,
 1-click privacy redaction, and Apple VideoToolbox compression controls.
 """
